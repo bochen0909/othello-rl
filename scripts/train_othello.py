@@ -17,18 +17,22 @@ import aip_rl.othello  # noqa: F401
 
 class OthelloCNN(TorchModelV2, nn.Module):
     """
-    Custom CNN model for Othello board.
+    Enhanced CNN model for Othello board with residual connections.
 
     Architecture:
     - Input: (3, 8, 8) - 3 channels (agent pieces, opponent pieces,
       valid moves)
-    - Conv1: 3 -> 64 channels, 3x3 kernel, padding=1
-    - Conv2: 64 -> 128 channels, 3x3 kernel, padding=1
-    - Conv3: 128 -> 128 channels, 3x3 kernel, padding=1
-    - Flatten: 128 * 8 * 8 = 8192 features
-    - FC1: 8192 -> 512
-    - FC2 (policy): 512 -> 64 (action logits)
-    - Value FC: 512 -> 1 (value function)
+    - Conv1: 3 -> 128 channels, 3x3 kernel, padding=1 + BatchNorm + ReLU
+    - ResBlock1: 128 -> 128 channels (2 conv layers with skip connection)
+    - ResBlock2: 128 -> 128 channels (2 conv layers with skip connection)
+    - Conv2: 128 -> 256 channels, 3x3 kernel, padding=1 + BatchNorm + ReLU
+    - ResBlock3: 256 -> 256 channels (2 conv layers with skip connection)
+    - Flatten: 256 * 8 * 8 = 16384 features
+    - FC1: 16384 -> 1024
+    - FC2 (policy): 1024 -> 64 (action logits)
+    - Value FC: 1024 -> 1 (value function)
+    
+    Total parameters: ~11.5M (better capacity for strategic learning)
     """
 
     def __init__(
@@ -39,51 +43,102 @@ class OthelloCNN(TorchModelV2, nn.Module):
         )
         nn.Module.__init__(self)
 
-        # CNN layers for (3, 8, 8) input
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
-        self.conv3 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
+        # Initial convolution
+        self.conv1 = nn.Conv2d(3, 128, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(128)
+        
+        # Residual blocks
+        self.res1_conv1 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
+        self.res1_bn1 = nn.BatchNorm2d(128)
+        self.res1_conv2 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
+        self.res1_bn2 = nn.BatchNorm2d(128)
+        
+        self.res2_conv1 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
+        self.res2_bn1 = nn.BatchNorm2d(128)
+        self.res2_conv2 = nn.Conv2d(128, 128, kernel_size=3, padding=1)
+        self.res2_bn2 = nn.BatchNorm2d(128)
+        
+        # Expansion convolution
+        self.conv2 = nn.Conv2d(128, 256, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(256)
+        
+        # Final residual block
+        self.res3_conv1 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
+        self.res3_bn1 = nn.BatchNorm2d(256)
+        self.res3_conv2 = nn.Conv2d(256, 256, kernel_size=3, padding=1)
+        self.res3_bn2 = nn.BatchNorm2d(256)
 
         # Fully connected layers
-        self.fc1 = nn.Linear(128 * 8 * 8, 512)
-        self.fc2 = nn.Linear(512, num_outputs)
+        self.fc1 = nn.Linear(256 * 8 * 8, 1024)
+        self.fc2 = nn.Linear(1024, num_outputs)
 
         # Value function head
-        self.value_fc = nn.Linear(512, 1)
+        self.value_fc = nn.Linear(1024, 1)
 
         self._features = None
+    
+    def _residual_block(self, x, conv1, bn1, conv2, bn2):
+        """Apply a residual block with skip connection."""
+        identity = x
+        out = torch.relu(bn1(conv1(x)))
+        out = bn2(conv2(out))
+        out += identity  # Skip connection
+        out = torch.relu(out)
+        return out
 
     def forward(self, input_dict, state, seq_lens):
         """
-        Forward pass through the network.
+        Forward pass through the network with action masking support.
 
         Args:
             input_dict: Dictionary containing 'obs' key with observations
+                       Channel 2 of obs contains the action mask
             state: RNN state (not used for this feedforward network)
             seq_lens: Sequence lengths (not used for this feedforward network)
 
         Returns:
             logits: Action logits of shape (batch_size, num_outputs)
+                   with large negative values for invalid actions
             state: Unchanged state
         """
         x = input_dict["obs"].float()
 
-        # CNN forward pass with ReLU activations
-        x = torch.relu(self.conv1(x))
-        x = torch.relu(self.conv2(x))
-        x = torch.relu(self.conv3(x))
+        # Initial convolution
+        x = torch.relu(self.bn1(self.conv1(x)))
+        
+        # Residual blocks
+        x = self._residual_block(x, self.res1_conv1, self.res1_bn1, 
+                                 self.res1_conv2, self.res1_bn2)
+        x = self._residual_block(x, self.res2_conv1, self.res2_bn1,
+                                 self.res2_conv2, self.res2_bn2)
+        
+        # Expansion
+        x = torch.relu(self.bn2(self.conv2(x)))
+        
+        # Final residual block
+        x = self._residual_block(x, self.res3_conv1, self.res3_bn1,
+                                 self.res3_conv2, self.res3_bn2)
 
         # Flatten
-        x = x.reshape(x.size(0), -1)
+        x_flat = x.reshape(x.size(0), -1)
 
         # FC layers
-        x = torch.relu(self.fc1(x))
-        self._features = x
+        x_fc = torch.relu(self.fc1(x_flat))
+        self._features = x_fc
 
         # Policy logits
-        logits = self.fc2(x)
+        logits = self.fc2(x_fc)
 
-        return logits, state
+        # Apply action masking
+        # Extract action mask from channel 2 of observation (shape: batch, 3, 8, 8)
+        obs = input_dict["obs"]
+        action_mask = obs[:, 2, :, :].reshape(-1, 64)
+        
+        # Mask invalid actions by adding large negative value to their logits
+        inf_mask = torch.clamp(torch.log(action_mask), min=-1e10)
+        masked_logits = logits + inf_mask
+
+        return masked_logits, state
 
     def value_function(self):
         """
@@ -105,6 +160,7 @@ def train_othello(args):
     # Define environment creator to ensure registration in workers
     def env_creator(env_config):
         import gymnasium as gym
+        import aip_rl.othello  # noqa: F401 - needed to register environment
         return gym.make("Othello-v0", **env_config)
 
     # Register environment with Ray
