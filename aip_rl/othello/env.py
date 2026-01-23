@@ -528,10 +528,15 @@ class OthelloEnv(gym.Env):
         # Record move in history
         self._move_history.append(action)
         
-        # Calculate reward for agent's move
+        # Calculate reward for agent's move (from current agent_player perspective)
         reward = self._calculate_reward(pieces_flipped, game_over)
         
-        # If self-play mode and game not over, execute opponent move
+        # In self-play mode, flip agent_player for next move
+        if self.opponent == "self" and not game_over:
+            # Agent switches sides in self-play
+            self.agent_player = 1 - self.agent_player
+        
+        # If NOT self-play mode and game not over, execute opponent move
         if self.opponent != "self" and not game_over:
             # Check if opponent has valid moves
             valid_moves = self.game.get_valid_moves()
