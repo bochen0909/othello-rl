@@ -40,11 +40,14 @@ pip install -e .
 
 3. Build the Rust extension:
 ```bash
-cd rust/othello
-cargo build --release
+# Install maturin if not already installed
+pip install maturin
+
+# Build and install the Rust extension (run from project root)
+maturin develop --release --manifest-path rust/othello/Cargo.toml
 ```
 
-The Rust extension will be automatically built and installed as `othello_rust` module.
+The Rust extension will be built and installed as `othello_rust` module.
 
 ### Verify Installation
 
@@ -532,10 +535,13 @@ Benchmark on typical hardware (M1 Mac):
 
 ### Import Error: `othello_rust` module not found
 
-The Rust extension needs to be built:
+The Rust extension needs to be built with maturin:
 ```bash
-cd rust/othello
-cargo build --release
+# Install maturin if not already installed
+pip install maturin
+
+# Build and install the Rust extension (run from project root)
+maturin develop --release --manifest-path rust/othello/Cargo.toml
 ```
 
 ### Invalid Move Errors
