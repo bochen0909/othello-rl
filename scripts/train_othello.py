@@ -102,6 +102,11 @@ class OthelloCNN(TorchModelV2, nn.Module):
             state: Unchanged state
         """
         x = input_dict["obs"].float()
+        
+        # Check for NaN/Inf in input
+        if torch.isnan(x).any() or torch.isinf(x).any():
+            print(f"WARNING: NaN/Inf in input observation!")
+            x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=0.0)
 
         # Initial convolution
         x = torch.relu(self.bn1(self.conv1(x)))
@@ -128,6 +133,11 @@ class OthelloCNN(TorchModelV2, nn.Module):
 
         # Policy logits
         logits = self.fc2(x_fc)
+        
+        # Check for NaN/Inf in logits before masking
+        if torch.isnan(logits).any() or torch.isinf(logits).any():
+            print(f"WARNING: NaN/Inf in logits before masking!")
+            logits = torch.nan_to_num(logits, nan=0.0, posinf=10.0, neginf=-10.0)
 
         # Apply action masking
         # Extract action mask from channel 2 of observation (shape: batch, 3, 8, 8)
@@ -135,7 +145,12 @@ class OthelloCNN(TorchModelV2, nn.Module):
         action_mask = obs[:, 2, :, :].reshape(-1, 64)
         
         # Mask invalid actions by adding large negative value to their logits
-        inf_mask = torch.clamp(torch.log(action_mask), min=-1e10)
+        # Use torch.where to avoid log(0) = -inf issues
+        inf_mask = torch.where(
+            action_mask > 0.5,
+            torch.zeros_like(logits),
+            torch.full_like(logits, -1e10)
+        )
         masked_logits = logits + inf_mask
 
         return masked_logits, state
@@ -193,6 +208,8 @@ def train_othello(args):
             gamma=args.gamma,
             lambda_=args.lambda_,
             clip_param=args.clip_param,
+            grad_clip=0.5,  # Clip gradients to prevent NaN/Inf
+            grad_clip_by="global_norm",
         )
         .evaluation(
             evaluation_interval=args.eval_interval,
@@ -282,8 +299,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--lr",
         type=float,
-        default=0.0003,
-        help="Learning rate (default: 0.0003)"
+        default=0.0001,  # Reduced from 0.0003 for stability
+        help="Learning rate (default: 0.0001)"
     )
     parser.add_argument(
         "--gamma",
