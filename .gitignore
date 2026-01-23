@@ -1,0 +1,26 @@
+# Build output
+/target/
+
+# Debug
+*.log
+
+# Editors and tooling
+/.idea/
+/.vscode/
+.DS_Store
+
+# Temporary files
+**/*.rs.bk
+
+*.csv
+__pycache__
+*.png
+*.parquet
+test_results
+
+.hypothesis
+
+__pycache__
+*.pyc
+
+rust/othello/target

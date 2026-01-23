@@ -1,0 +1,20 @@
+[package]
+name = "othello"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "othello_rust"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.20", features = ["extension-module"] }
+numpy = "0.20"
+ndarray = "0.15"
+
+[dev-dependencies]
+proptest = "1.4"
+
+[profile.release]
+opt-level = 3
+lto = true

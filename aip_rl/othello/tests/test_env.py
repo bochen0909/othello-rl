@@ -1,0 +1,197 @@
+"""
+Unit tests for Othello Gymnasium environment.
+
+Tests environment initialization, reset, observation generation, and info dictionary.
+"""
+
+import pytest
+import numpy as np
+from aip_rl.othello.env import OthelloEnv
+
+
+class TestOthelloEnvReset:
+    """Test suite for OthelloEnv reset method."""
+
+    def test_reset_returns_correct_observation_shape(self):
+        """Test that reset returns observation with correct shape."""
+        env = OthelloEnv()
+        obs, info = env.reset()
+        
+        # Check observation shape
+        assert obs.shape == (3, 8, 8)
+        assert obs.dtype == np.float32
+
+    def test_reset_returns_correct_observation_values(self):
+        """Test that reset returns observation with correct initial values."""
+        env = OthelloEnv()
+        obs, info = env.reset()
+        
+        # All values should be in [0, 1]
+        assert np.all(obs >= 0)
+        assert np.all(obs <= 1)
+        
+        # Channel 0: Agent's pieces (Black, initially 2 pieces)
+        assert np.sum(obs[0]) == 2
+        
+        # Channel 1: Opponent's pieces (White, initially 2 pieces)
+        assert np.sum(obs[1]) == 2
+        
+        # Channel 2: Valid moves (initially 4 valid moves)
+        assert np.sum(obs[2]) == 4
+
+    def test_reset_info_contains_required_fields(self):
+        """Test that reset returns info dictionary with all required fields."""
+        env = OthelloEnv()
+        obs, info = env.reset()
+        
+        # Check that all required fields are present
+        assert "action_mask" in info
+        assert "current_player" in info
+        assert "black_count" in info
+        assert "white_count" in info
+        assert "agent_player" in info
+
+    def test_reset_info_action_mask_format(self):
+        """Test that action_mask in info has correct format."""
+        env = OthelloEnv()
+        obs, info = env.reset()
+        
+        action_mask = info["action_mask"]
+        
+        # Check shape and type
+        assert action_mask.shape == (64,)
+        assert action_mask.dtype == bool
+        
+        # Initially should have 4 valid moves
+        assert np.sum(action_mask) == 4
+
+    def test_reset_info_initial_values(self):
+        """Test that info dictionary contains correct initial values."""
+        env = OthelloEnv()
+        obs, info = env.reset()
+        
+        # Check initial values
+        assert info["current_player"] == 0  # Black starts
+        assert info["black_count"] == 2
+        assert info["white_count"] == 2
+        assert info["agent_player"] == 0  # Agent plays as Black
+
+    def test_reset_agent_player_is_black(self):
+        """Test that agent_player is set to 0 (Black) after reset."""
+        env = OthelloEnv()
+        obs, info = env.reset()
+        
+        assert env.agent_player == 0
+        assert info["agent_player"] == 0
+
+    def test_reset_multiple_times(self):
+        """Test that multiple resets work correctly."""
+        env = OthelloEnv()
+        
+        for _ in range(3):
+            obs, info = env.reset()
+            
+            # Check observation shape
+            assert obs.shape == (3, 8, 8)
+            
+            # Check initial state
+            assert info["black_count"] == 2
+            assert info["white_count"] == 2
+            assert info["current_player"] == 0
+            assert info["agent_player"] == 0
+
+    def test_reset_with_seed(self):
+        """Test that reset accepts seed parameter."""
+        env = OthelloEnv()
+        
+        # Should not raise error
+        obs1, info1 = env.reset(seed=42)
+        obs2, info2 = env.reset(seed=42)
+        
+        # Initial state should be deterministic
+        assert np.array_equal(obs1, obs2)
+        assert info1["black_count"] == info2["black_count"]
+
+    def test_reset_observation_channels_are_disjoint(self):
+        """Test that agent and opponent piece channels don't overlap."""
+        env = OthelloEnv()
+        obs, info = env.reset()
+        
+        # Channels 0 and 1 should not overlap (no cell has both agent and opponent piece)
+        overlap = obs[0] * obs[1]
+        assert np.sum(overlap) == 0
+
+    def test_reset_observation_matches_board_state(self):
+        """Test that observation correctly represents the initial board state."""
+        env = OthelloEnv()
+        obs, info = env.reset()
+        
+        # Get board from game engine
+        board = env.game.get_board()
+        
+        # Agent is Black (1), opponent is White (2)
+        expected_agent = (board == 1).astype(np.float32)
+        expected_opponent = (board == 2).astype(np.float32)
+        
+        assert np.array_equal(obs[0], expected_agent)
+        assert np.array_equal(obs[1], expected_opponent)
+
+
+class TestOthelloEnvInitialization:
+    """Test suite for OthelloEnv initialization."""
+
+    def test_default_initialization(self):
+        """Test that environment initializes with default parameters."""
+        env = OthelloEnv()
+        
+        assert env.opponent == "self"
+        assert env.reward_mode == "sparse"
+        assert env.invalid_move_penalty == -1.0
+        assert env.invalid_move_mode == "penalty"
+        assert env.render_mode is None
+
+    def test_custom_initialization(self):
+        """Test that environment accepts custom parameters."""
+        env = OthelloEnv(
+            opponent="random",
+            reward_mode="dense",
+            invalid_move_penalty=-0.5,
+            invalid_move_mode="random",
+            render_mode="ansi"
+        )
+        
+        assert env.opponent == "random"
+        assert env.reward_mode == "dense"
+        assert env.invalid_move_penalty == -0.5
+        assert env.invalid_move_mode == "random"
+        assert env.render_mode == "ansi"
+
+    def test_observation_space_definition(self):
+        """Test that observation space is correctly defined."""
+        env = OthelloEnv()
+        
+        assert env.observation_space.shape == (3, 8, 8)
+        assert env.observation_space.dtype == np.float32
+        assert np.all(env.observation_space.low == 0)
+        assert np.all(env.observation_space.high == 1)
+
+    def test_action_space_definition(self):
+        """Test that action space is correctly defined."""
+        env = OthelloEnv()
+        
+        assert env.action_space.n == 64
+
+    def test_invalid_reward_mode_raises_error(self):
+        """Test that invalid reward_mode raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid reward_mode"):
+            OthelloEnv(reward_mode="invalid")
+
+    def test_invalid_move_mode_raises_error(self):
+        """Test that invalid invalid_move_mode raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid invalid_move_mode"):
+            OthelloEnv(invalid_move_mode="invalid")
+
+    def test_invalid_render_mode_raises_error(self):
+        """Test that invalid render_mode raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid render_mode"):
+            OthelloEnv(render_mode="invalid")
