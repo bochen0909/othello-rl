@@ -24,6 +24,7 @@ Examples:
 """
 
 import argparse
+import os
 import sys
 import gymnasium as gym
 import numpy as np
@@ -376,6 +377,26 @@ def load_trained_agent(checkpoint_path: str):
     try:
         import ray
         from ray.rllib.algorithms.algorithm import Algorithm
+        from ray.rllib.models import ModelCatalog
+        from ray.tune.registry import register_env
+        import aip_rl.othello  # noqa: F401 - ensure env is registered in workers
+
+        def register_custom_model():
+            from scripts.train_othello import OthelloCNN
+            try:
+                ModelCatalog.register_custom_model("othello_cnn", OthelloCNN)
+            except ValueError:
+                pass
+
+        checkpoint_path = resolve_checkpoint_path(checkpoint_path)
+
+        def env_creator(env_config):
+            import aip_rl.othello  # noqa: F401 - ensure env registered in workers
+            register_custom_model()
+            return gym.make("Othello-v0", **env_config)
+
+        register_env("Othello-v0", env_creator)
+        register_custom_model()
 
         ray.init(ignore_reinit_error=True)
         algo = Algorithm.from_checkpoint(checkpoint_path)
@@ -393,6 +414,55 @@ def load_trained_agent(checkpoint_path: str):
     except Exception as e:
         print(f"Error loading checkpoint: {e}")
         sys.exit(1)
+
+
+def resolve_checkpoint_path(checkpoint_path: str) -> str:
+    """Resolve a checkpoint directory or a parent directory containing checkpoints."""
+    path = os.path.abspath(os.path.expanduser(checkpoint_path))
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Checkpoint path does not exist: {path}")
+
+    def is_checkpoint_dir(dir_path: str) -> bool:
+        return (
+            os.path.isfile(os.path.join(dir_path, "rllib_checkpoint.json"))
+            or os.path.isfile(os.path.join(dir_path, "algorithm_state.pkl"))
+        )
+
+    if os.path.isdir(path):
+        base = os.path.basename(path)
+        if base.startswith("checkpoint_") or is_checkpoint_dir(path):
+            return path
+
+        candidates = []
+        for name in os.listdir(path):
+            full_path = os.path.join(path, name)
+            if not os.path.isdir(full_path):
+                continue
+            if name.startswith("checkpoint_") or is_checkpoint_dir(full_path):
+                candidates.append(full_path)
+
+        if not candidates:
+            raise FileNotFoundError(
+                f"No checkpoint directories found under: {path}"
+            )
+
+        for candidate in candidates:
+            if os.path.basename(candidate) == "final":
+                return candidate
+
+        def checkpoint_key(p):
+            name = os.path.basename(p)
+            if name.startswith("checkpoint_") or name.startswith("iter_"):
+                try:
+                    return int(name.split("_", 1)[1])
+                except (IndexError, ValueError):
+                    return -1
+            return -1
+
+        candidates.sort(key=checkpoint_key)
+        return candidates[-1]
+
+    return path
 
 
 def parse_args():

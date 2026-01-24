@@ -4,6 +4,7 @@ Trains a PPO agent with custom CNN model on Othello-v0 environment
 """
 
 import argparse
+import os
 import ray
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.models import ModelCatalog
@@ -231,6 +232,9 @@ def train_othello(args):
 
     algo = config.build()
 
+    checkpoint_dir = os.path.abspath(args.checkpoint_dir)
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
     # Training loop
     print(f"Starting training for {args.num_iterations} iterations...")
 
@@ -247,11 +251,15 @@ def train_othello(args):
                 print(f"  Episode Length: {episode_len:.2f}")
 
         if (i + 1) % args.checkpoint_freq == 0:
-            checkpoint = algo.save()
+            iter_dir = os.path.join(checkpoint_dir, f"iter_{i + 1:06d}")
+            os.makedirs(iter_dir, exist_ok=True)
+            checkpoint = algo.save(checkpoint_dir=iter_dir)
             print(f"  Checkpoint: {checkpoint}")
 
     # Final checkpoint
-    final_checkpoint = algo.save()
+    final_dir = os.path.join(checkpoint_dir, "final")
+    os.makedirs(final_dir, exist_ok=True)
+    final_checkpoint = algo.save(checkpoint_dir=final_dir)
     print(
         f"\nTraining complete! Final checkpoint: {final_checkpoint}"
     )
@@ -277,6 +285,12 @@ if __name__ == "__main__":
         type=int,
         default=20,
         help="Save checkpoint every N iterations (default: 20)"
+    )
+    parser.add_argument(
+        "--checkpoint-dir",
+        type=str,
+        default="checkpoints",
+        help="Directory to write checkpoints (default: ./checkpoints)"
     )
     
     # Environment parameters
