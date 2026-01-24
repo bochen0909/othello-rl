@@ -54,6 +54,12 @@ def parse_args():
         default="black",
         help="Color for human player (default: black)"
     )
+    parser.add_argument(
+        "--cpu-only",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Force CPU loading for checkpoints (default: true)"
+    )
     
     return parser.parse_args()
 
@@ -107,7 +113,7 @@ def get_human_move(valid_moves: np.ndarray) -> int:
             sys.exit(0)
 
 
-def load_trained_agent(checkpoint_path: str):
+def load_trained_agent(checkpoint_path: str, cpu_only: bool):
     """
     Load a trained agent from checkpoint.
     
@@ -120,6 +126,8 @@ def load_trained_agent(checkpoint_path: str):
     try:
         import ray
         from ray.rllib.algorithms.algorithm import Algorithm
+        from ray.rllib.algorithms.algorithm import get_checkpoint_info
+        from ray.rllib.algorithms.algorithm_config import AlgorithmConfig
         from ray.rllib.models import ModelCatalog
         from ray.tune.registry import register_env
         import aip_rl.othello  # noqa: F401 - ensure env is registered in workers
@@ -144,8 +152,26 @@ def load_trained_agent(checkpoint_path: str):
         # Initialize Ray
         ray.init(ignore_reinit_error=True)
         
-        # Load the algorithm from checkpoint
-        algo = Algorithm.from_checkpoint(checkpoint_path)
+        def force_cpu_config(config):
+            if isinstance(config, dict):
+                config["num_gpus"] = 0
+                config["num_gpus_per_learner"] = 0
+                config["num_gpus_per_env_runner"] = 0
+                return config
+            if isinstance(config, AlgorithmConfig):
+                config.num_gpus = 0
+                config.num_gpus_per_learner = 0
+                config.num_gpus_per_env_runner = 0
+            return config
+
+        checkpoint_info = get_checkpoint_info(checkpoint_path)
+        state = Algorithm._checkpoint_info_to_algorithm_state(
+            checkpoint_info=checkpoint_info,
+            policy_mapping_fn=AlgorithmConfig.DEFAULT_POLICY_MAPPING_FN,
+        )
+        if cpu_only:
+            state["config"] = force_cpu_config(state.get("config"))
+        algo = Algorithm.from_state(state)
         
         def agent_policy(obs):
             """Policy function that uses the trained agent."""
@@ -338,7 +364,7 @@ def main():
     
     # Determine opponent policy
     if args.checkpoint:
-        opponent_policy = load_trained_agent(args.checkpoint)
+        opponent_policy = load_trained_agent(args.checkpoint, args.cpu_only)
     else:
         opponent_policy = args.opponent
     

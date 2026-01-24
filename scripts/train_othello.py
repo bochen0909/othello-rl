@@ -197,6 +197,7 @@ def train_othello(args):
                 "opponent": args.opponent,
                 "reward_mode": args.reward_mode,
                 "invalid_move_mode": "penalty",
+                "start_player": args.start_player,
             },
         )
         .framework("torch")
@@ -307,6 +308,13 @@ if __name__ == "__main__":
         default="sparse",
         choices=["sparse", "heuristic"],
         help="Reward mode (default: sparse)"
+    )
+    parser.add_argument(
+        "--start-player",
+        type=str,
+        default="random",
+        choices=["black", "white", "random"],
+        help="Agent starting side (default: random)"
     )
     
     # PPO hyperparameters

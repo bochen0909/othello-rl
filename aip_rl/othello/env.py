@@ -176,6 +176,7 @@ class OthelloEnv(gym.Env):
         reward_fn: Optional[Callable] = None,
         invalid_move_penalty: float = -1.0,
         invalid_move_mode: str = "penalty",
+        start_player: str = "black",
         render_mode: Optional[str] = None,
     ):
         """
@@ -215,6 +216,12 @@ class OthelloEnv(gym.Env):
                 - "penalty": Apply invalid_move_penalty and maintain state
                 - "random": Automatically select random valid move instead
                 - "error": Raise ValueError exception
+
+            start_player: Starting side for the agent. Options:
+                - "black": Agent starts as Black (default)
+                - "white": Agent starts as White (a random/legal Black move is
+                  applied before the first agent step)
+                - "random": Randomize between Black and White per episode
             
             render_mode: Rendering mode for visualization. Options:
                 - None: No rendering (default, fastest)
@@ -229,6 +236,7 @@ class OthelloEnv(gym.Env):
                 - invalid_move_mode not in ["penalty", "random", "error"]
                 - render_mode not in [None, "human", "ansi", "rgb_array"]
                 - opponent not in ["self", "random", "greedy"] and not callable
+                - start_player not in ["black", "white", "random"]
         
         Example:
             >>> # Default configuration (self-play, sparse rewards)
@@ -267,6 +275,12 @@ class OthelloEnv(gym.Env):
                 f"Invalid invalid_move_mode: {invalid_move_mode}. "
                 "Must be 'penalty', 'random', or 'error'."
             )
+
+        if start_player not in ["black", "white", "random"]:
+            raise ValueError(
+                f"Invalid start_player: {start_player}. "
+                "Must be 'black', 'white', or 'random'."
+            )
         
         if render_mode is not None and render_mode not in self.metadata["render_modes"]:
             raise ValueError(
@@ -296,6 +310,7 @@ class OthelloEnv(gym.Env):
         self.reward_fn = reward_fn
         self.invalid_move_penalty = invalid_move_penalty
         self.invalid_move_mode = invalid_move_mode
+        self.start_player = start_player
         self.render_mode = render_mode
         
         # Gymnasium spaces
@@ -317,8 +332,8 @@ class OthelloEnv(gym.Env):
         Reset the environment to initial state.
         
         Resets the game board to the standard Othello starting position with
-        4 pieces in the center (2 black, 2 white). The agent always starts as
-        Black (player 0).
+        4 pieces in the center (2 black, 2 white). The agent starts as the
+        configured start_player (default: Black).
         
         Args:
             seed: Random seed for reproducibility. Sets the random number
@@ -339,7 +354,7 @@ class OthelloEnv(gym.Env):
                 - current_player: 0 (Black, agent's turn)
                 - black_count: 2 (initial black pieces)
                 - white_count: 2 (initial white pieces)
-                - agent_player: 0 (agent plays as Black)
+                - agent_player: 0 or 1 (agent's starting color)
         
         Example:
             >>> env = gym.make("Othello-v0")
@@ -356,7 +371,8 @@ class OthelloEnv(gym.Env):
             >>> print(observation.shape)  # (3, 8, 8)
         
         Notes:
-            - Agent always starts as Black (player 0)
+            - Agent starts as configured by start_player
+            - If start_player="white", an initial Black move is applied
             - Initial board has 4 pieces in center: Black at (3,3) and (4,4),
               White at (3,4) and (4,3)
             - Initial valid moves are at positions: (2,3), (3,2), (4,5), (5,4)
@@ -367,11 +383,36 @@ class OthelloEnv(gym.Env):
         # Reset game to initial state
         self.game.reset()
         
-        # Agent always plays as Black initially
-        self.agent_player = 0
+        # Determine starting player and optionally advance one move
+        start_player = self.start_player
+        if start_player == "random":
+            start_player = "black" if self.np_random.integers(0, 2) == 0 else "white"
+
+        self.agent_player = 0 if start_player == "black" else 1
 
         # Clear move history
         self._move_history = []
+
+        # If agent starts as White, apply an initial Black move
+        if self.agent_player != self.game.get_current_player():
+            valid_moves = self.game.get_valid_moves()
+            valid_indices = np.where(valid_moves)[0]
+            if len(valid_indices) > 0:
+                if self.opponent == "greedy":
+                    action = self._get_greedy_move()
+                elif callable(self.opponent):
+                    prev_agent_player = self.agent_player
+                    self.agent_player = self.game.get_current_player()
+                    obs = self._get_observation()
+                    self.agent_player = prev_agent_player
+                    action = int(self.opponent(obs))
+                    if not valid_moves[action]:
+                        action = int(self.np_random.choice(valid_indices))
+                else:
+                    action = int(self.np_random.choice(valid_indices))
+
+                self.game.step(action)
+                self._move_history.append(action)
         
         # Get initial observation and info
         obs = self._get_observation()
