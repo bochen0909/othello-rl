@@ -59,7 +59,11 @@ def train_othello(args):
             },
         )
         .framework("torch")
-        .resources(num_cpus_per_worker=1, num_gpus_per_worker=1 / 10, num_gpus=args.num_gpus)
+        .resources(
+            num_cpus_per_worker=1,
+            num_gpus_per_worker=args.num_gpus_per_worker,
+            num_gpus=args.num_gpus,
+        )
         .training(
             train_batch_size=args.train_batch_size,
             minibatch_size=args.minibatch_size,
@@ -229,6 +233,12 @@ def main():
         help="Number of GPUs to use (default: 0)",
     )
     parser.add_argument(
+        "--num-gpus-per-worker",
+        type=float,
+        default=None,
+        help="GPUs per worker (default: 1 / (num_workers + 2))",
+    )
+    parser.add_argument(
         "--num-cpus",
         type=int,
         default=None,
@@ -250,6 +260,8 @@ def main():
     )
 
     args = parser.parse_args()
+    if args.num_gpus_per_worker is None:
+        args.num_gpus_per_worker = args.num_gpus / (args.num_workers + 2)
     train_othello(args)
 
 
