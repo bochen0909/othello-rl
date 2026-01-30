@@ -142,7 +142,15 @@ def play_game(opponent_policy, human_color: str = "black") -> None:
                     continue
         else:
             print("Opponent is thinking...")
-            pass
+            unwrapped = env.unwrapped
+            valid_moves = unwrapped.game.get_valid_moves()
+            if np.any(valid_moves):
+                unwrapped._execute_opponent_move()
+            obs = unwrapped._get_observation()
+            info = unwrapped._get_info()
+            terminated = unwrapped.game.get_winner() != 3
+            print("\nBoard after opponent move:")
+            env.render()
 
     print("\n" + "=" * 60)
     print("GAME OVER")

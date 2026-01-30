@@ -72,6 +72,19 @@ class OthelloGUI:
         self.opponent_move_time = 0
         self.show_last_move_duration = 1500
 
+        if not self.is_human_turn():
+            board_before = self.get_board_state().copy()
+            self.env.unwrapped._execute_opponent_move()
+            self.info = self.env.unwrapped._get_info()
+            self.last_move = self.find_last_move(
+                board_before, self.get_board_state()
+            )
+            self.opponent_move_time = pygame.time.get_ticks()
+            if self.env.unwrapped.game.get_winner() != 3:
+                self.game_over = True
+                self.winner = self.env.unwrapped.game.get_winner()
+            self.message = "Your turn!"
+
     def get_board_state(self):
         """Extract board state from observation."""
         unwrapped = self.env.unwrapped
