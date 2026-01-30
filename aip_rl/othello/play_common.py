@@ -134,7 +134,10 @@ def load_trained_agent(checkpoint_path: str, cpu_only: bool) -> Callable:
                 config["num_gpus_per_learner"] = 0
                 config["num_gpus_per_env_runner"] = 0
                 config["num_workers"] = 0
-                config["num_rollout_workers"] = 0
+                if "num_rollout_workers" in config:
+                    if "num_env_runners" not in config:
+                        config["num_env_runners"] = config["num_rollout_workers"]
+                    config.pop("num_rollout_workers", None)
                 config["num_env_runners"] = 0
                 return config
             if isinstance(config, AlgorithmConfig):
@@ -142,8 +145,6 @@ def load_trained_agent(checkpoint_path: str, cpu_only: bool) -> Callable:
                 config.num_gpus_per_learner = 0
                 config.num_gpus_per_env_runner = 0
                 config.num_workers = 0
-                if hasattr(config, "num_rollout_workers"):
-                    config.num_rollout_workers = 0
                 if hasattr(config, "num_env_runners"):
                     config.num_env_runners = 0
             return config
