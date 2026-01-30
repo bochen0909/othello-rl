@@ -169,9 +169,9 @@ def main():
     parser.add_argument(
         "--start-player",
         type=str,
-        default="random",
+        default="black",
         choices=["black", "white", "random"],
-        help="Agent starting side (default: random)",
+        help="Agent starting side (default: black)",
     )
 
     # PPO hyperparameters

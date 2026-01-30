@@ -1,4 +1,5 @@
 python scripts/train_othello.py \
+  --start-player black \
   --num-iterations 200 \
   --num-workers 8 \
   --num-gpus 1 \
