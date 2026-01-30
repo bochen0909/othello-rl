@@ -57,6 +57,7 @@ class OthelloGUI:
             reward_mode="sparse",
             invalid_move_mode="error",
             render_mode=None,
+            start_player=human_color,
         )
         self.opponent_policy = opponent_policy
         self.human_color = human_color

@@ -77,6 +77,7 @@ def play_game(opponent_policy, human_color: str = "black") -> None:
         reward_mode="sparse",
         invalid_move_mode="error",
         render_mode="human",
+        start_player=human_color,
     )
 
     human_is_black = human_color == "black"
