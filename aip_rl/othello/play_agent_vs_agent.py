@@ -84,7 +84,9 @@ def _select_action(policy, obs, info, env) -> int:
     return action
 
 
-def play_game(black_policy, white_policy, black_label: str, white_label: str) -> None:
+def play_game(
+    black_policy, white_policy, black_label: str, white_label: str
+) -> None:
     env = gym.make(
         "Othello-v0",
         opponent="self",
@@ -132,9 +134,8 @@ def play_game(black_policy, white_policy, black_label: str, white_label: str) ->
     print("GAME OVER")
     print("=" * 60)
 
-    unwrapped_env = env.unwrapped
-    winner = info.get("winner", unwrapped_env.game.get_winner())
-    black_count, white_count = unwrapped_env.game.get_piece_counts()
+    winner = info.get("winner", env.unwrapped.game.get_winner())
+    black_count, white_count = env.unwrapped.game.get_piece_counts()
 
     print("\nFinal score:")
     print(f"  ● Black: {black_count}")
