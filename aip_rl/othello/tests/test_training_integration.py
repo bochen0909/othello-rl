@@ -706,3 +706,242 @@ class TestTrainingIntegration:
                 pass
 
         ray.shutdown()
+
+
+class TestGPUTraining:
+    """Test suite for GPU-accelerated training."""
+
+    def setup_method(self):
+        """Set up test fixtures."""
+        if ray.is_initialized():
+            ray.shutdown()
+
+    def teardown_method(self):
+        """Clean up after tests."""
+        if ray.is_initialized():
+            ray.shutdown()
+
+    def test_cuda_availability(self):
+        """Test that CUDA is available on the system."""
+        assert torch.cuda.is_available(), "CUDA is not available"
+        assert torch.cuda.device_count() > 0, "No CUDA devices found"
+
+    def test_model_on_gpu(self):
+        """Test that model can be moved to GPU."""
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+
+        obs_space = gym.spaces.Box(0, 1, shape=(3, 8, 8), dtype=np.float32)
+        action_space = gym.spaces.Discrete(64)
+
+        model = OthelloCNN(
+            obs_space=obs_space,
+            action_space=action_space,
+            num_outputs=64,
+            model_config={},
+            name="test_model_gpu",
+        )
+
+        # Move model to GPU
+        model = model.to("cuda")
+
+        # Verify model is on GPU
+        assert next(model.parameters()).is_cuda
+
+    def test_forward_pass_gpu(self):
+        """Test forward pass with GPU tensors."""
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+
+        obs_space = gym.spaces.Box(0, 1, shape=(3, 8, 8), dtype=np.float32)
+        action_space = gym.spaces.Discrete(64)
+
+        model = OthelloCNN(
+            obs_space=obs_space,
+            action_space=action_space,
+            num_outputs=64,
+            model_config={},
+            name="test_model_gpu_forward",
+        )
+
+        # Move model to GPU
+        model = model.to("cuda")
+
+        # Create observations on GPU
+        obs = torch.randn(2, 3, 8, 8, device="cuda")
+        obs = torch.clamp(obs, 0, 1)
+
+        input_dict = {"obs": obs}
+        logits, state_out = model.forward(input_dict, [], None)
+
+        # Check output is on GPU
+        assert logits.is_cuda
+        assert logits.shape == (2, 64)
+
+    def test_value_function_gpu(self):
+        """Test value function computation on GPU."""
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+
+        obs_space = gym.spaces.Box(0, 1, shape=(3, 8, 8), dtype=np.float32)
+        action_space = gym.spaces.Discrete(64)
+
+        model = OthelloCNN(
+            obs_space=obs_space,
+            action_space=action_space,
+            num_outputs=64,
+            model_config={},
+            name="test_model_gpu_value",
+        )
+
+        # Move model to GPU
+        model = model.to("cuda")
+
+        # Create observations on GPU
+        obs = torch.randn(2, 3, 8, 8, device="cuda")
+        obs = torch.clamp(obs, 0, 1)
+
+        input_dict = {"obs": obs}
+        model.forward(input_dict, [], None)
+
+        # Get value function
+        values = model.value_function()
+
+        # Check value function output is on GPU
+        assert values.is_cuda
+        assert values.shape == (2,)
+
+    def test_gradient_computation_gpu(self):
+        """Test that gradients can be computed on GPU."""
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+
+        obs_space = gym.spaces.Box(0, 1, shape=(3, 8, 8), dtype=np.float32)
+        action_space = gym.spaces.Discrete(64)
+
+        model = OthelloCNN(
+            obs_space=obs_space,
+            action_space=action_space,
+            num_outputs=64,
+            model_config={},
+            name="test_model_gpu_grad",
+        )
+
+        # Move model to GPU
+        model = model.to("cuda")
+
+        # Create observations on GPU
+        obs = torch.randn(2, 3, 8, 8, device="cuda", requires_grad=False)
+        obs = torch.clamp(obs, 0, 1)
+
+        input_dict = {"obs": obs}
+        logits, _ = model.forward(input_dict, [], None)
+
+        # Compute loss and gradients
+        loss = logits.sum()
+        loss.backward()
+
+        # Verify gradients were computed for at least some parameters
+        has_gradients = False
+        for param in model.parameters():
+            if param.requires_grad and param.grad is not None:
+                has_gradients = True
+                assert param.grad.is_cuda
+                break
+
+        assert has_gradients, "No gradients were computed"
+
+    def test_ppo_training_with_gpu(self):
+        """Test PPO training with GPU acceleration."""
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+
+        ray.init(ignore_reinit_error=True, num_cpus=4, num_gpus=1)
+
+        # Register custom model
+        ModelCatalog.register_custom_model("othello_cnn_gpu", OthelloCNN)
+
+        # Define environment creator
+        def env_creator(env_config):
+            return gym.make("Othello-v0", **env_config)
+
+        # Register environment with Ray
+        from ray.tune.registry import register_env
+
+        register_env("Othello-v0-gpu", env_creator)
+
+        try:
+            # Configure PPO with GPU
+            config = (
+                PPOConfig()
+                .api_stack(
+                    enable_rl_module_and_learner=False,
+                    enable_env_runner_and_connector_v2=False,
+                )
+                .environment(
+                    env="Othello-v0-gpu",
+                    env_config={
+                        "opponent": "self",
+                        "reward_mode": "sparse",
+                        "invalid_move_mode": "penalty",
+                        "start_player": "random",
+                    },
+                )
+                .framework("torch")
+                .resources(num_gpus=1)
+                .training(
+                    train_batch_size=256,
+                    minibatch_size=64,
+                    num_sgd_iter=1,
+                    lr=0.0001,
+                )
+                .evaluation(
+                    evaluation_interval=None,
+                )
+                .env_runners(num_env_runners=0)
+            )
+
+            config.model = {
+                "custom_model": "othello_cnn_gpu",
+                "max_seq_len": 1,
+            }
+
+            # Build and train algorithm
+            algo = config.build()
+            result = algo.train()
+
+            # Verify training worked
+            assert result is not None
+
+            # Clean up
+            algo.stop()
+
+        finally:
+            ray.shutdown()
+
+    def test_model_device_transfer(self):
+        """Test moving model between CPU and GPU."""
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+
+        obs_space = gym.spaces.Box(0, 1, shape=(3, 8, 8), dtype=np.float32)
+        action_space = gym.spaces.Discrete(64)
+
+        model = OthelloCNN(
+            obs_space=obs_space,
+            action_space=action_space,
+            num_outputs=64,
+            model_config={},
+            name="test_model_transfer",
+        )
+
+        # Initially on CPU
+        assert not next(model.parameters()).is_cuda
+
+        # Move to GPU
+        model = model.to("cuda")
+        assert next(model.parameters()).is_cuda
+
+        # Move back to CPU
+        model = model.to("cpu")
+        assert not next(model.parameters()).is_cuda
