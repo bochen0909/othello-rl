@@ -59,7 +59,7 @@ def train_othello(args):
             },
         )
         .framework("torch")
-        .resources(num_gpus=args.num_gpus)
+        .resources(num_cpus_per_worker=1, num_gpus_per_worker=1 / 10, num_gpus=args.num_gpus)
         .training(
             train_batch_size=args.train_batch_size,
             minibatch_size=args.minibatch_size,
@@ -77,8 +77,6 @@ def train_othello(args):
             evaluation_num_env_runners=1,
         )
     )
-
-    # Set number of parallel workers
     config["num_env_runners"] = args.num_workers
 
     # Set custom model (model is a dict attribute, not a method)
