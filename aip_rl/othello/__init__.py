@@ -33,6 +33,8 @@ docstring.
 
 from gymnasium.envs.registration import register
 from aip_rl.othello.env import OthelloEnv
+from aip_rl.othello.models import OthelloCNN
+from aip_rl.othello import train
 
 register(
     id="Othello-v0",
@@ -40,4 +42,4 @@ register(
     max_episode_steps=60,
 )
 
-__all__ = ["OthelloEnv"]
+__all__ = ["OthelloEnv", "OthelloCNN", "train"]

@@ -94,6 +94,96 @@ while not done:
 print(f"Episode finished with total reward: {total_reward}")
 ```
 
+### Training an Othello Agent
+
+#### Quick Start: Train for 10 Iterations
+```bash
+python scripts/train_othello.py --num-iterations 10 --checkpoint-freq 5
+```
+
+#### Fast Training: Self-Play with 4 Workers
+```bash
+python scripts/train_othello.py \
+  --num-iterations 100 \
+  --checkpoint-freq 10 \
+  --opponent self \
+  --num-workers 4 \
+  --lr 0.0001
+```
+
+#### Training Against Greedy Opponent
+```bash
+python scripts/train_othello.py \
+  --num-iterations 200 \
+  --opponent greedy \
+  --reward-mode heuristic \
+  --num-workers 4
+```
+
+#### Full Training Run (Longer)
+```bash
+python scripts/train_othello.py \
+  --num-iterations 500 \
+  --checkpoint-freq 25 \
+  --opponent self \
+  --reward-mode sparse \
+  --num-workers 8 \
+  --num-gpus 1 \
+  --checkpoint-dir ./checkpoints/full_run
+```
+
+#### Train Programmatically
+```python
+from aip_rl.othello.train import train_othello
+import argparse
+
+args = argparse.Namespace(
+    num_iterations=100,
+    checkpoint_freq=10,
+    checkpoint_dir="checkpoints",
+    opponent="self",
+    reward_mode="sparse",
+    start_player="random",
+    lr=0.0001,
+    gamma=0.99,
+    lambda_=0.95,
+    clip_param=0.2,
+    train_batch_size=8000,
+    minibatch_size=256,
+    num_sgd_iter=20,
+    num_workers=4,
+    num_gpus=0,
+    num_cpus=None,
+    eval_interval=10,
+    eval_duration=20,
+)
+
+train_othello(args)
+```
+
+#### All Available Options
+```bash
+python scripts/train_othello.py --help
+```
+
+**Common Options:**
+- `--num-iterations`: Number of training iterations (default: 200)
+- `--checkpoint-freq`: Save checkpoint every N iterations (default: 20)
+- `--opponent`: Opponent type - `self`, `random` (default: `self`)
+- `--reward-mode`: Reward structure - `sparse`, `heuristic` (default: `sparse`)
+- `--num-workers`: Parallel environment workers (default: 4)
+- `--num-gpus`: GPUs to use (default: 0)
+- `--lr`: Learning rate (default: 0.0001)
+
+**Output:**
+Checkpoints are saved to `checkpoints/` directory:
+```
+checkpoints/
+├── iter_000010/    # Checkpoint after 10 iterations
+├── iter_000020/    # Checkpoint after 20 iterations
+└── final/          # Final trained model
+```
+
 ### With Rendering
 
 ```python
@@ -265,7 +355,56 @@ The info dictionary returned by `step()` and `reset()` contains:
 
 ## Training with Ray RLlib
 
-### Basic PPO Training
+### Using the Training Script (Recommended)
+
+The easiest way to train a PPO agent is using the built-in training script:
+
+```bash
+# Basic training
+python scripts/train_othello.py --num-iterations 100
+
+# With custom options
+python scripts/train_othello.py \
+  --num-iterations 200 \
+  --opponent self \
+  --reward-mode sparse \
+  --num-workers 8 \
+  --checkpoint-freq 25
+```
+
+See the "Training an Othello Agent" section above for more examples.
+
+### Using the Train Module Programmatically
+
+```python
+from aip_rl.othello.train import train_othello
+import argparse
+
+args = argparse.Namespace(
+    num_iterations=100,
+    checkpoint_freq=10,
+    checkpoint_dir="checkpoints",
+    opponent="self",
+    reward_mode="sparse",
+    start_player="random",
+    lr=0.0001,
+    gamma=0.99,
+    lambda_=0.95,
+    clip_param=0.2,
+    train_batch_size=8000,
+    minibatch_size=256,
+    num_sgd_iter=20,
+    num_workers=4,
+    num_gpus=0,
+    num_cpus=None,
+    eval_interval=10,
+    eval_duration=20,
+)
+
+train_othello(args)
+```
+
+### Basic PPO Training (Custom Implementation)
 
 ```python
 import ray
@@ -306,43 +445,34 @@ algo.stop()
 ray.shutdown()
 ```
 
-### Custom CNN Model
+### Using a Custom CNN Model
 
-For better performance with the (3, 8, 8) observation space, use a custom CNN:
+The training script automatically uses an enhanced CNN model with residual connections. To use it in a custom training loop:
 
 ```python
 from ray.rllib.models import ModelCatalog
-from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
-import torch.nn as nn
+from aip_rl.othello.models import OthelloCNN
 
-class OthelloCNN(TorchModelV2, nn.Module):
-    def __init__(self, obs_space, action_space, num_outputs, model_config, name):
-        TorchModelV2.__init__(self, obs_space, action_space, num_outputs, 
-                             model_config, name)
-        nn.Module.__init__(self)
-        
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
-        self.fc = nn.Linear(128 * 8 * 8, num_outputs)
-        self.value_fc = nn.Linear(128 * 8 * 8, 1)
-        self._features = None
-    
-    def forward(self, input_dict, state, seq_lens):
-        x = torch.relu(self.conv1(input_dict["obs"].float()))
-        x = torch.relu(self.conv2(x))
-        x = x.reshape(x.size(0), -1)
-        self._features = x
-        return self.fc(x), state
-    
-    def value_function(self):
-        return self.value_fc(self._features).squeeze(1)
-
-# Register model
+# Register the model
 ModelCatalog.register_custom_model("othello_cnn", OthelloCNN)
 
 # Use in config
 config = PPOConfig().model({"custom_model": "othello_cnn"})
+
+algo = config.build()
+for _ in range(100):
+    algo.train()
 ```
+
+The OthelloCNN model features:
+- **3 input channels**: Agent pieces, opponent pieces, valid move mask
+- **128 channels**: Initial convolution with batch norm
+- **Residual blocks**: 2 residual blocks (128 channels) for feature extraction
+- **256 channels**: Expansion convolution with batch norm
+- **1 residual block**: Final residual block (256 channels)
+- **1024 hidden units**: Fully connected layer
+- **Action masking**: Built-in support for masking invalid actions
+- **~11.5M parameters**: Sufficient capacity for strategic game learning
 
 ### Action Masking with RLlib
 
@@ -478,8 +608,10 @@ while True:
 .
 ├── aip_rl/
 │   └── othello/
-│       ├── __init__.py          # Environment registration
+│       ├── __init__.py          # Environment registration & module exports
 │       ├── env.py               # Gymnasium environment wrapper
+│       ├── models.py            # OthelloCNN model for training
+│       ├── train.py             # PPO training logic and CLI
 │       └── tests/
 │           ├── test_env.py      # Unit tests
 │           └── test_properties.py  # Property-based tests
@@ -493,12 +625,19 @@ while True:
 │       │   └── test_bindings_properties.py
 │       └── Cargo.toml
 ├── scripts/
-│   ├── train_othello.py         # Training script
+│   ├── train_othello.py         # Training script entry point
 │   ├── play_human_vs_agent.py   # Human interaction (console)
 │   ├── play_human_vs_agent_gui.py  # Human interaction (GUI)
 │   └── watch_agents_play.py     # Spectator mode
 └── README.md
 ```
+
+**Key Modules:**
+
+- **`aip_rl/othello/env.py`**: Core Gymnasium environment (1165 lines)
+- **`aip_rl/othello/models.py`**: OthelloCNN neural network model for training
+- **`aip_rl/othello/train.py`**: PPO training with Ray RLlib support
+- **`scripts/train_othello.py`**: Command-line entry point for training
 
 ## Testing
 
