@@ -36,8 +36,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--games-per-side",
         type=int,
-        default=10,
-        help="Games per side in each matchup (default: 10)",
+        default=50,
+        help="Games per side in each matchup (default: 50)",
     )
     parser.add_argument(
         "--rounds",
@@ -178,30 +178,47 @@ def main() -> None:
         if a in new_agents or b in new_agents
     ]
 
-    if pairs:
-        for _ in range(args.rounds):
-            for black_name, white_name in pairs:
-                black_policy = policies[black_name]
-                white_policy = policies[white_name]
-                for winner in play_match(
-                    black_policy, white_policy, args.games_per_side
-                ):
-                    score_black = score_from_winner(winner)
-                    r_b = ratings[black_name]
-                    r_w = ratings[white_name]
-                    r_b, r_w = update_elo(r_b, r_w, score_black, args.k_factor)
-                    ratings[black_name] = r_b
-                    ratings[white_name] = r_w
+    print(f"Evaluating {len(agent_names)} agents ({len(checkpoint_agents)} from checkpoints) "
+          f"over {len(pairs)} pairing(s) with {args.games_per_side} games per side.")
+    if not pairs:
+        print("No new opponents to compare; skipping matchup simulation.")
+        backup_file(elo_path)
+        with open(elo_path, "w", encoding="utf-8") as f:
+            json.dump(ratings, f, indent=2, sort_keys=True)
+            f.write("\n")
+        return
 
-                for winner in play_match(
-                    policies[white_name], policies[black_name], args.games_per_side
-                ):
-                    score_black = score_from_winner(winner)
-                    r_b = ratings[white_name]
-                    r_w = ratings[black_name]
-                    r_b, r_w = update_elo(r_b, r_w, score_black, args.k_factor)
-                    ratings[white_name] = r_b
-                    ratings[black_name] = r_w
+    total_pairs = len(pairs)
+    for round_index in range(args.rounds):
+        print(f"Round {round_index + 1}/{args.rounds}")
+        for pair_index, (black_name, white_name) in enumerate(pairs, start=1):
+            print(f"  Match {pair_index}/{total_pairs}: {black_name} (black) vs {white_name} (white)")
+            black_policy = policies[black_name]
+            white_policy = policies[white_name]
+            for winner in play_match(
+                black_policy, white_policy, args.games_per_side
+            ):
+                score_black = score_from_winner(winner)
+                r_b = ratings[black_name]
+                r_w = ratings[white_name]
+                r_b, r_w = update_elo(r_b, r_w, score_black, args.k_factor)
+                ratings[black_name] = r_b
+                ratings[white_name] = r_w
+
+            for winner in play_match(
+                policies[white_name], policies[black_name], args.games_per_side
+            ):
+                score_black = score_from_winner(winner)
+                r_b = ratings[white_name]
+                r_w = ratings[black_name]
+                r_b, r_w = update_elo(r_b, r_w, score_black, args.k_factor)
+                ratings[white_name] = r_b
+                ratings[black_name] = r_w
+
+            print(
+                f"    Updated ratings: {black_name} {ratings[black_name]:.1f}, "
+                f"{white_name} {ratings[white_name]:.1f}"
+            )
 
     backup_file(elo_path)
     with open(elo_path, "w", encoding="utf-8") as f:
