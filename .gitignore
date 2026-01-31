@@ -26,3 +26,5 @@ __pycache__
 rust/othello/target
 
 checkpoints
+
+tmp/*
