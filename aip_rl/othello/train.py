@@ -41,6 +41,15 @@ def train_othello(args):
 
     register_env("Othello-v0", env_creator)
 
+    # Prepare opponent list (allow comma-separated builtins/checkpoints)
+    opponent_specs = [
+        spec.strip()
+        for spec in args.opponent.split(",")
+        if spec.strip()
+    ]
+    if not opponent_specs:
+        opponent_specs = ["random", "greedy"]
+
     # Configure PPO with action masking
     # Note: Using old API stack to support custom ModelV2 models
     config = (
@@ -52,7 +61,7 @@ def train_othello(args):
         .environment(
             env="Othello-v0",
             env_config={
-                "opponent": args.opponent,
+                "opponent": opponent_specs,
                 "reward_mode": args.reward_mode,
                 "invalid_move_mode": "penalty",
                 "start_player": args.start_player,
@@ -92,6 +101,10 @@ def train_othello(args):
     }
 
     algo = config.build()
+
+    if args.resume_checkpoint:
+        print(f"Restoring checkpoint from {args.resume_checkpoint}...")
+        algo.restore(args.resume_checkpoint)
 
     checkpoint_dir = os.path.abspath(args.checkpoint_dir)
     os.makedirs(checkpoint_dir, exist_ok=True)
@@ -150,14 +163,22 @@ def main():
         default="checkpoints",
         help="Directory to write checkpoints (default: ./checkpoints)",
     )
+    parser.add_argument(
+        "--resume-checkpoint",
+        type=str,
+        default=None,
+        help="Path to an existing checkpoint to restore before training (default: None)",
+    )
 
     # Environment parameters
     parser.add_argument(
         "--opponent",
         type=str,
-        default="random",
-        choices=["random", "greedy"],
-        help="Opponent type (default: random)",
+        default="random,greedy",
+        help=(
+            "Comma-separated opponent list (built-in 'random', 'greedy', and/or "
+            "checkpoint paths, default: random + greedy)"
+        ),
     )
     parser.add_argument(
         "--reward-mode",

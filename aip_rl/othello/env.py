@@ -58,11 +58,17 @@ Author: [Your Name]
 Version: 1.0.0
 """
 
+import os
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
-from typing import Optional, Tuple, Dict, Any, Callable, Union
+from typing import Optional, Tuple, Dict, Any, Callable, Union, List
 import othello_rust
+
+from aip_rl.othello.models import OthelloCNN
+
+OpponentPolicy = Union[str, Callable[[np.ndarray], int]]
+OpponentConfig = Union[OpponentPolicy, List[OpponentPolicy]]
 
 
 class OthelloEnv(gym.Env):
@@ -183,11 +189,14 @@ class OthelloEnv(gym.Env):
 
         Args:
             opponent: Opponent policy configuration. Options:
-                - "random": Random opponent selecting random valid moves
-                - "greedy": Greedy opponent maximizing pieces flipped per move
-                - callable: Custom policy function with signature:
+                - Single string "random" or "greedy" to use built-in opponents
+                - Callable policy with signature:
                     policy(observation: np.ndarray) -> int
                     Must return action in range [0, 63]
+                - List or comma-separated string containing any combination of:
+                    * Built-in names ("random", "greedy")
+                    * Paths to trained checkpoints (loads the saved agent)
+                  Each episode randomly samples one entry from this list.
 
             reward_mode: Reward structure configuration. Options:
                 - "sparse": Terminal rewards only (0 during game, +1/-1/0 at end)
@@ -233,7 +242,7 @@ class OthelloEnv(gym.Env):
                 - reward_mode="custom" but reward_fn is None
                 - invalid_move_mode not in ["penalty", "random", "error"]
                 - render_mode not in [None, "human", "ansi", "rgb_array"]
-                - opponent not in ["random", "greedy"] and not callable
+                - invalid opponent configuration (must include built-in names, callables, or checkpoint paths)
                 - start_player not in ["black", "white", "random"]
 
         Example:
@@ -284,24 +293,16 @@ class OthelloEnv(gym.Env):
                 f"Must be one of {self.metadata['render_modes']}."
             )
 
-        # Validate opponent parameter
-        if isinstance(opponent, str):
-            if opponent not in ["random", "greedy"]:
-                raise ValueError(
-                    f"Invalid opponent: {opponent}. "
-                    "Must be 'random', 'greedy', or a callable."
-                )
-        elif not callable(opponent):
-            raise ValueError(
-                "opponent must be a string ('random', 'greedy') "
-                "or a callable function."
-            )
-
         # Initialize game engine
         self.game = othello_rust.OthelloGame()
 
         # Configuration
-        self.opponent = opponent
+        try:
+            self._opponent_specs = self._normalize_opponent_specs(opponent)
+        except ValueError as exc:
+            raise ValueError(f"Invalid opponent configuration: {exc}") from exc
+
+        self.opponent = self._opponent_specs[0]
         self.reward_mode = reward_mode
         self.reward_fn = reward_fn
         self.invalid_move_penalty = invalid_move_penalty
@@ -389,6 +390,9 @@ class OthelloEnv(gym.Env):
         # Clear move history
         self._move_history = []
 
+        # Sample opponent for this episode
+        self.opponent = self._select_random_opponent()
+
         # If agent starts as White, apply an initial Black move
         if self.agent_player != self.game.get_current_player():
             valid_moves = self.game.get_valid_moves()
@@ -415,6 +419,55 @@ class OthelloEnv(gym.Env):
         info = self._get_info()
 
         return obs, info
+
+    def _select_random_opponent(self) -> OpponentPolicy:
+        """Randomly choose an opponent policy for the current episode."""
+        if len(self._opponent_specs) == 1:
+            return self._opponent_specs[0]
+        index = self.np_random.integers(0, len(self._opponent_specs))
+        return self._opponent_specs[index]
+
+    def _normalize_opponent_specs(self, opponent: OpponentConfig) -> List[OpponentPolicy]:
+        """Flatten the opponent config into a list of valid policies."""
+
+        def expand(value):
+            if isinstance(value, (list, tuple)):
+                for item in value:
+                    yield from expand(item)
+            elif isinstance(value, str):
+                for part in value.split(","):
+                    part = part.strip()
+                    if part:
+                        yield part
+            elif callable(value):
+                yield value
+            else:
+                raise ValueError(f"Unsupported opponent spec: {value!r}")
+
+        entries = list(expand(opponent))
+        normalized: List[OpponentPolicy] = []
+        for entry in entries:
+            if isinstance(entry, str):
+                normalized_name = entry.strip()
+                lower_name = normalized_name.lower()
+                if lower_name in ["random", "greedy"]:
+                    normalized.append(lower_name)
+                else:
+                    try:
+                        normalized.append(_load_checkpoint_policy(normalized_name))
+                    except FileNotFoundError as exc:
+                        raise ValueError(
+                            f"Checkpoint opponent not found: {normalized_name}"
+                        ) from exc
+            elif callable(entry):
+                normalized.append(entry)
+            else:
+                raise ValueError(f"Unsupported opponent spec: {entry!r}")
+
+        if not normalized:
+            raise ValueError("Opponent list must contain at least one policy.")
+
+        return normalized
 
     def _get_observation(self) -> np.ndarray:
         """
@@ -1161,3 +1214,143 @@ class OthelloEnv(gym.Env):
                 "Reconstructed board state does not match saved state. "
                 "Move history may be corrupted."
             )
+
+
+# ----------------------------------------------------------------------
+# Helpers for checkpoint-based opponents
+# ----------------------------------------------------------------------
+
+_CHECKPOINT_POLICY_CACHE: Dict[str, Callable[[np.ndarray], int]] = {}
+_CHECKPOINT_ENV_REGISTERED = False
+
+
+def _resolve_checkpoint_path(checkpoint_path: str) -> str:
+    """Resolve user input to a concrete checkpoint directory."""
+    path = os.path.abspath(os.path.expanduser(checkpoint_path))
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Checkpoint path does not exist: {path}")
+
+    def is_checkpoint_dir(dir_path: str) -> bool:
+        return (
+            os.path.isfile(os.path.join(dir_path, "rllib_checkpoint.json"))
+            or os.path.isfile(os.path.join(dir_path, "algorithm_state.pkl"))
+        )
+
+    if os.path.isdir(path):
+        base = os.path.basename(path)
+        if base.startswith("checkpoint_") or is_checkpoint_dir(path):
+            return path
+
+        candidates = []
+        for name in os.listdir(path):
+            full_path = os.path.join(path, name)
+            if not os.path.isdir(full_path):
+                continue
+            if name.startswith("checkpoint_") or is_checkpoint_dir(full_path):
+                candidates.append(full_path)
+
+        if not candidates:
+            raise FileNotFoundError(f"No checkpoint directories found under: {path}")
+
+        for candidate in candidates:
+            if os.path.basename(candidate) == "final":
+                return candidate
+
+        def checkpoint_key(p: str) -> int:
+            name = os.path.basename(p)
+            if name.startswith("checkpoint_") or name.startswith("iter_"):
+                try:
+                    return int(name.split("_", 1)[1])
+                except (IndexError, ValueError):
+                    return -1
+            return -1
+
+        candidates.sort(key=checkpoint_key)
+        return candidates[-1]
+
+    return path
+
+
+def _force_cpu_config(config):
+    """Force a checkpoint config to run on CPU only."""
+    if config is None:
+        return config
+
+    from ray.rllib.algorithms.algorithm_config import AlgorithmConfig
+
+    if isinstance(config, dict):
+        config["num_gpus"] = 0
+        config["num_gpus_per_worker"] = 0
+        config["num_gpus_per_env_runner"] = 0
+        config["num_workers"] = 0
+        config["num_env_runners"] = 0
+        config.pop("num_rollout_workers", None)
+        return config
+
+    if isinstance(config, AlgorithmConfig):
+        config.num_gpus = 0
+        config.num_gpus_per_learner = 0
+        config.num_gpus_per_env_runner = 0
+        config.num_workers = 0
+        if hasattr(config, "num_env_runners"):
+            config.num_env_runners = 0
+        return config
+
+    return config
+
+
+def _register_checkpoint_environment():
+    """Ensure RLlib knows how to reconstruct the Othello env/model for checkpoints."""
+    global _CHECKPOINT_ENV_REGISTERED
+    if _CHECKPOINT_ENV_REGISTERED:
+        return
+
+    from ray.rllib.models import ModelCatalog
+    from ray.tune.registry import register_env
+
+    def register_custom_model() -> None:
+        try:
+            ModelCatalog.register_custom_model("othello_cnn", OthelloCNN)
+        except ValueError:
+            pass
+
+    def env_creator(env_config):
+        register_custom_model()
+        return OthelloEnv(**env_config)
+
+    register_env("Othello-v0", env_creator)
+    register_custom_model()
+    _CHECKPOINT_ENV_REGISTERED = True
+
+
+def _load_checkpoint_policy(checkpoint_path: str) -> Callable[[np.ndarray], int]:
+    """Load a trained agent from a Ray checkpoint for use as an opponent."""
+    resolved_path = _resolve_checkpoint_path(checkpoint_path)
+    if resolved_path in _CHECKPOINT_POLICY_CACHE:
+        return _CHECKPOINT_POLICY_CACHE[resolved_path]
+
+    _register_checkpoint_environment()
+
+    import ray
+    from ray.rllib.algorithms.algorithm import Algorithm, get_checkpoint_info
+    from ray.rllib.algorithms.algorithm_config import AlgorithmConfig
+
+    if not ray.is_initialized():
+        ray.init(ignore_reinit_error=True)
+
+    checkpoint_info = get_checkpoint_info(resolved_path)
+    state = Algorithm._checkpoint_info_to_algorithm_state(
+        checkpoint_info=checkpoint_info,
+        policy_mapping_fn=AlgorithmConfig.DEFAULT_POLICY_MAPPING_FN,
+    )
+    state["config"] = _force_cpu_config(state.get("config"))
+
+    algo = Algorithm.from_state(state)
+
+    def checkpoint_policy(obs):
+        output = algo.compute_single_action(obs, explore=False)
+        action = output[0] if isinstance(output, tuple) else output
+        return int(action)
+
+    _CHECKPOINT_POLICY_CACHE[resolved_path] = checkpoint_policy
+    return checkpoint_policy
