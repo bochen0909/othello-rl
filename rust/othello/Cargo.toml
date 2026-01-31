@@ -11,6 +11,7 @@ crate-type = ["cdylib", "rlib"]
 pyo3 = { version = "0.20", features = ["extension-module"] }
 numpy = "0.20"
 ndarray = "0.15"
+othello-engines = { path = "../engines" }
 
 [dev-dependencies]
 proptest = "1.4"

@@ -1,0 +1,14 @@
+[package]
+name = "othello-engines"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[lib]
+name = "othello_engines"
+path = "src/lib.rs"
+
+[[test]]
+name = "integration_tests"
+path = "tests/integration_tests.rs"

@@ -66,6 +66,7 @@ from typing import Optional, Tuple, Dict, Any, Callable, Union, List
 import othello_rust
 
 from aip_rl.othello.models import OthelloCNN
+from aip_rl.othello.engines import get_engine_opponent, get_available_engines
 
 OpponentPolicy = Union[str, Callable[[np.ndarray], int]]
 OpponentConfig = Union[OpponentPolicy, List[OpponentPolicy]]
@@ -106,6 +107,9 @@ class OthelloEnv(gym.Env):
         opponent (Union[str, Callable], optional): Opponent policy. Options:
             - "random" (default): Random opponent selecting random valid moves
             - "greedy": Greedy opponent maximizing pieces flipped
+            - "aelskels": External engine with alpha-beta pruning AI (5-turn lookahead)
+            - "drohh": External engine with minimax and strategic evaluation
+            - "nealetham": External engine with naive greedy AI
             - callable: Custom policy function(observation) -> action
 
         reward_mode (str, optional): Reward structure. Options:
@@ -427,7 +431,9 @@ class OthelloEnv(gym.Env):
         index = self.np_random.integers(0, len(self._opponent_specs))
         return self._opponent_specs[index]
 
-    def _normalize_opponent_specs(self, opponent: OpponentConfig) -> List[OpponentPolicy]:
+    def _normalize_opponent_specs(
+        self, opponent: OpponentConfig
+    ) -> List[OpponentPolicy]:
         """Flatten the opponent config into a list of valid policies."""
 
         def expand(value):
@@ -452,6 +458,9 @@ class OthelloEnv(gym.Env):
                 lower_name = normalized_name.lower()
                 if lower_name in ["random", "greedy"]:
                     normalized.append(lower_name)
+                elif lower_name in get_available_engines():
+                    # Engine opponent
+                    normalized.append(get_engine_opponent(lower_name))
                 else:
                     try:
                         normalized.append(_load_checkpoint_policy(normalized_name))
@@ -601,7 +610,9 @@ class OthelloEnv(gym.Env):
                     # No valid moves available - game should be over
                     obs = self._get_observation()
                     info = self._get_info()
-                    reward = self._calculate_reward(0, True, agent_player=self.agent_player)
+                    reward = self._calculate_reward(
+                        0, True, agent_player=self.agent_player
+                    )
                     return obs, reward, True, False, info
             else:  # penalty mode
                 # Apply penalty and return current state
@@ -666,7 +677,9 @@ class OthelloEnv(gym.Env):
         Returns:
             Reward value as float
         """
-        agent_player_for_reward = self.agent_player if agent_player is None else agent_player
+        agent_player_for_reward = (
+            self.agent_player if agent_player is None else agent_player
+        )
 
         if self.reward_mode == "sparse":
             # Sparse rewards: 0 during game, +1/-1/0 at end
@@ -1231,10 +1244,9 @@ def _resolve_checkpoint_path(checkpoint_path: str) -> str:
         raise FileNotFoundError(f"Checkpoint path does not exist: {path}")
 
     def is_checkpoint_dir(dir_path: str) -> bool:
-        return (
-            os.path.isfile(os.path.join(dir_path, "rllib_checkpoint.json"))
-            or os.path.isfile(os.path.join(dir_path, "algorithm_state.pkl"))
-        )
+        return os.path.isfile(
+            os.path.join(dir_path, "rllib_checkpoint.json")
+        ) or os.path.isfile(os.path.join(dir_path, "algorithm_state.pkl"))
 
     if os.path.isdir(path):
         base = os.path.basename(path)

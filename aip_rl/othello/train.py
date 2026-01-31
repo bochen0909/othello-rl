@@ -42,11 +42,7 @@ def train_othello(args):
     register_env("Othello-v0", env_creator)
 
     # Prepare opponent list (allow comma-separated builtins/checkpoints)
-    opponent_specs = [
-        spec.strip()
-        for spec in args.opponent.split(",")
-        if spec.strip()
-    ]
+    opponent_specs = [spec.strip() for spec in args.opponent.split(",") if spec.strip()]
     if not opponent_specs:
         opponent_specs = ["random", "greedy"]
 
@@ -176,8 +172,9 @@ def main():
         type=str,
         default="random,greedy",
         help=(
-            "Comma-separated opponent list (built-in 'random', 'greedy', and/or "
-            "checkpoint paths, default: random + greedy)"
+            "Comma-separated opponent list. Built-in options: 'random', 'greedy'. "
+            "External engines: 'aelskels', 'drohh', 'nealetham'. "
+            "Also accepts checkpoint paths (default: random + greedy)"
         ),
     )
     parser.add_argument(

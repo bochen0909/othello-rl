@@ -191,9 +191,14 @@ version = "0.1.0"
 dependencies = [
  "ndarray",
  "numpy",
+ "othello-engines",
  "proptest",
  "pyo3",
 ]
+
+[[package]]
+name = "othello-engines"
+version = "0.1.0"
 
 [[package]]
 name = "parking_lot"

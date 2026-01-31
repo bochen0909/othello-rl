@@ -120,6 +120,40 @@ python scripts/train_othello.py \
   --num-workers 4
 ```
 
+#### Training Against External Engine Opponents
+
+Training against `aelskels` (strategic AI with lookahead):
+```bash
+python scripts/train_othello.py \
+  --num-iterations 200 \
+  --opponent aelskels \
+  --num-workers 4
+```
+
+Training against `drohh` (minimax AI):
+```bash
+python scripts/train_othello.py \
+  --num-iterations 200 \
+  --opponent drohh \
+  --num-workers 4
+```
+
+Training against `nealetham` (naive greedy AI):
+```bash
+python scripts/train_othello.py \
+  --num-iterations 200 \
+  --opponent nealetham \
+  --num-workers 4
+```
+
+Training against multiple opponents (diverse opponents):
+```bash
+python scripts/train_othello.py \
+  --num-iterations 500 \
+  --opponent "aelskels,drohh,nealetham,random,greedy" \
+  --num-workers 8
+```
+
 #### Full Training Run (Longer)
 ```bash
 python scripts/train_othello.py \
@@ -222,8 +256,16 @@ env = gym.make(
 
 ### Opponent Policies
 
+Built-in opponents:
 - **`"random"`** (default): Random opponent that selects random valid moves
 - **`"greedy"`**: Greedy opponent that maximizes pieces flipped
+
+External engines (high-performance AI):
+- **`"aelskels"`**: Alpha-beta pruning AI with 5-turn lookahead (~17ms/move)
+- **`"drohh"`**: Minimax with strategic evaluation (~0.5ms/move)
+- **`"nealetham"`**: Naive greedy AI maximizing immediate capture (~0.08ms/move)
+
+Custom:
 - **`callable`**: Custom policy function that takes observation and returns action
 
 Example with custom opponent:
@@ -236,6 +278,34 @@ def my_opponent_policy(observation):
 
 env = gym.make("Othello-v0", opponent=my_opponent_policy)
 ```
+
+### External Engine Algorithms
+
+The three external engines implement different strategic approaches to Othello:
+
+#### aelskels - Alpha-Beta Pruning (Strategic)
+- **Algorithm**: Minimax with alpha-beta pruning
+- **Lookahead**: 5 moves deep
+- **Heuristic**: Piece count + mobility + corner control
+- **Performance**: ~17ms/move
+- **Style**: Aggressive, long-term strategic play
+- **Best for**: Training agents against sophisticated opponents
+
+#### drohh - Minimax AI (Balanced)
+- **Algorithm**: Minimax with alpha-beta pruning
+- **Lookahead**: 5 moves deep
+- **Heuristic**: Mobility + piece count + corner weighting
+- **Performance**: ~0.5ms/move
+- **Style**: Balanced strategic play
+- **Best for**: General training with good opponent quality
+
+#### nealetham - Greedy AI (Fast)
+- **Algorithm**: Greedy heuristic evaluation
+- **Lookahead**: 0 moves (immediate)
+- **Heuristic**: Maximizes immediate piece captures
+- **Performance**: ~0.08ms/move
+- **Style**: Aggressive capture-oriented play
+- **Best for**: Fast training sessions, baseline opponent
 
 ### Reward Modes
 
@@ -694,6 +764,32 @@ action = np.random.choice(valid_actions)
 Or configure the environment to handle invalid moves:
 ```python
 env = gym.make("Othello-v0", invalid_move_mode="random")
+```
+
+### External Engine Issues
+
+**Engine not recognized**:
+```bash
+# Make sure the engines are available
+python -c "from aip_rl.othello.engines import get_available_engines; print(get_available_engines())"
+```
+
+Expected output:
+```
+['aelskels', 'drohh', 'nealetham']
+```
+
+**Engine moves seem slow**:
+- `aelskels` uses deeper lookahead (5 moves) and is slower (~17ms/move)
+- `drohh` provides a balance (~0.5ms/move)
+- `nealetham` is fastest (~0.08ms/move) but less strategic
+- For training with many workers, use `nealetham` for speed
+
+**Engine not responding**:
+Ensure the PyO3 bindings are properly built:
+```bash
+unset CONDA_PREFIX  # If using virtual env
+maturin develop --release --manifest-path rust/othello/Cargo.toml
 ```
 
 ### RLlib Training Issues

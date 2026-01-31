@@ -24,7 +24,9 @@ __pycache__
 *.pyc
 
 rust/othello/target
+rust/engines/target
 
 checkpoints
 
 tmp/*
+.ipynb_checkpoints
