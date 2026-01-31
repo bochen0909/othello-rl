@@ -548,7 +548,7 @@ class OthelloEnv(gym.Env):
                     # No valid moves available - game should be over
                     obs = self._get_observation()
                     info = self._get_info()
-                    reward = self._calculate_reward(0, True)
+                    reward = self._calculate_reward(0, True, agent_player=self.agent_player)
                     return obs, reward, True, False, info
             else:  # penalty mode
                 # Apply penalty and return current state
@@ -563,11 +563,8 @@ class OthelloEnv(gym.Env):
         # Record move in history
         self._move_history.append(action)
 
-        # Store agent_player before it's flipped (needed for reward calculation context)
+        # Store agent_player before any opponent move (reward should be from mover's perspective)
         agent_player_for_move = self.agent_player
-
-        # Calculate reward for agent's move (from current agent_player perspective)
-        reward = self._calculate_reward(pieces_flipped, game_over)
 
         # Execute opponent move if game not over
         if not game_over:
@@ -575,10 +572,20 @@ class OthelloEnv(gym.Env):
             valid_moves = self.game.get_valid_moves()
             if np.any(valid_moves):
                 # Execute opponent's move
-                self._execute_opponent_move()
+                opponent_action = self._execute_opponent_move()
+                if opponent_action is not None:
+                    self._move_history.append(opponent_action)
 
                 # Check if game is over after opponent's move
                 game_over = self.game.get_winner() != 3
+            else:
+                # No valid moves for opponent; game might still be over
+                game_over = self.game.get_winner() != 3
+
+        # Calculate reward after any opponent move so state matches returned observation/info
+        reward = self._calculate_reward(
+            pieces_flipped, game_over, agent_player=agent_player_for_move
+        )
 
         # Get observation and info
         obs = self._get_observation()
@@ -593,7 +600,9 @@ class OthelloEnv(gym.Env):
 
         return obs, reward, terminated, truncated, info
 
-    def _calculate_reward(self, pieces_flipped: int, game_over: bool) -> float:
+    def _calculate_reward(
+        self, pieces_flipped: int, game_over: bool, agent_player: Optional[int] = None
+    ) -> float:
         """
         Calculate reward based on reward mode.
 
@@ -604,6 +613,8 @@ class OthelloEnv(gym.Env):
         Returns:
             Reward value as float
         """
+        agent_player_for_reward = self.agent_player if agent_player is None else agent_player
+
         if self.reward_mode == "sparse":
             # Sparse rewards: 0 during game, +1/-1/0 at end
             if not game_over:
@@ -612,7 +623,7 @@ class OthelloEnv(gym.Env):
             winner = self.game.get_winner()
             if winner == 2:  # Draw
                 return 0.0
-            elif winner == self.agent_player:
+            elif winner == agent_player_for_reward:
                 return 1.0
             else:
                 return -1.0
@@ -620,7 +631,7 @@ class OthelloEnv(gym.Env):
         elif self.reward_mode == "dense":
             # Dense rewards: normalized piece differential
             black_count, white_count = self.game.get_piece_counts()
-            if self.agent_player == 0:  # Agent is Black
+            if agent_player_for_reward == 0:  # Agent is Black
                 return (black_count - white_count) / 64.0
             else:  # Agent is White
                 return (white_count - black_count) / 64.0
@@ -640,7 +651,7 @@ class OthelloEnv(gym.Env):
                 "black_count": black_count,
                 "white_count": white_count,
                 "current_player": current_player,
-                "agent_player": self.agent_player,
+                "agent_player": agent_player_for_reward,
                 "game_over": game_over,
                 "pieces_flipped": pieces_flipped,
             }
@@ -651,7 +662,7 @@ class OthelloEnv(gym.Env):
             # Should not reach here due to validation in __init__
             raise ValueError(f"Unknown reward_mode: {self.reward_mode}")
 
-    def _execute_opponent_move(self) -> None:
+    def _execute_opponent_move(self) -> Optional[int]:
         """
         Execute opponent's move based on opponent policy.
 
@@ -667,7 +678,7 @@ class OthelloEnv(gym.Env):
 
         # If no valid moves, turn will be passed automatically by game engine
         if not np.any(valid_moves):
-            return
+            return None
 
         # Select action based on opponent policy
         if self.opponent == "random":
@@ -696,6 +707,7 @@ class OthelloEnv(gym.Env):
 
         # Execute the opponent's move
         self.game.step(action)
+        return int(action)
 
     def _get_greedy_move(self) -> int:
         """
