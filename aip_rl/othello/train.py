@@ -155,9 +155,9 @@ def main():
     parser.add_argument(
         "--opponent",
         type=str,
-        default="self",
-        choices=["self", "random"],
-        help="Opponent type (default: self)",
+        default="random",
+        choices=["random", "greedy"],
+        help="Opponent type (default: random)",
     )
     parser.add_argument(
         "--reward-mode",

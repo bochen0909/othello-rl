@@ -274,7 +274,7 @@ class TestPPOConfiguration:
             .environment(
                 env="Othello-v0",
                 env_config={
-                    "opponent": "self",
+                    "opponent": "random",
                     "reward_mode": "sparse",
                     "invalid_move_mode": "penalty",
                     "start_player": "random",
@@ -312,7 +312,7 @@ class TestPPOConfiguration:
                 .environment(
                     env="Othello-v0-build",
                     env_config={
-                        "opponent": "self",
+                        "opponent": "random",
                         "reward_mode": "sparse",
                         "invalid_move_mode": "penalty",
                         "start_player": "random",
@@ -380,7 +380,7 @@ class TestPPOConfiguration:
                 .environment(
                     env="Othello-v0-train",
                     env_config={
-                        "opponent": "self",
+                        "opponent": "random",
                         "reward_mode": "sparse",
                         "invalid_move_mode": "penalty",
                         "start_player": "random",
@@ -479,7 +479,7 @@ class TestCheckpointOperations:
                 .environment(
                     env="Othello-v0-checkpoint",
                     env_config={
-                        "opponent": "self",
+                        "opponent": "random",
                         "reward_mode": "sparse",
                         "invalid_move_mode": "penalty",
                         "start_player": "random",
@@ -586,7 +586,7 @@ class TestTrainingIntegration:
                 .environment(
                     env="Othello-v0-multi",
                     env_config={
-                        "opponent": "self",
+                        "opponent": "random",
                         "reward_mode": "sparse",
                         "invalid_move_mode": "penalty",
                         "start_player": "random",
@@ -668,7 +668,7 @@ class TestTrainingIntegration:
                     .environment(
                         env=env_id,
                         env_config={
-                            "opponent": "self",
+                            "opponent": "random",
                             "reward_mode": reward_mode,
                             "invalid_move_mode": "penalty",
                             "start_player": "random",
@@ -881,7 +881,7 @@ class TestGPUTraining:
                 .environment(
                     env="Othello-v0-gpu",
                     env_config={
-                        "opponent": "self",
+                        "opponent": "random",
                         "reward_mode": "sparse",
                         "invalid_move_mode": "penalty",
                         "start_player": "random",

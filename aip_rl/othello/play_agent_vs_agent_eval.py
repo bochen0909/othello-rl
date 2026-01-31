@@ -66,7 +66,7 @@ def play_games(
 ) -> None:
     env = gym.make(
         "Othello-v0",
-        opponent="self",
+        opponent=white_policy,
         reward_mode="sparse",
         invalid_move_mode="error",
         render_mode=None,
@@ -82,11 +82,7 @@ def play_games(
         terminated = False
 
         while not terminated:
-            current_player = info["current_player"]
-            is_black_turn = current_player == 0
-            policy = black_policy if is_black_turn else white_policy
-
-            action = _select_action(policy, obs, info, env)
+            action = _select_action(black_policy, obs, info, env)
             if action < 0:
                 if env.unwrapped.game.get_winner() != 3:
                     terminated = True

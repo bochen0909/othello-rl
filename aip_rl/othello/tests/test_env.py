@@ -144,7 +144,7 @@ class TestOthelloEnvInitialization:
         """Test that environment initializes with default parameters."""
         env = OthelloEnv()
         
-        assert env.opponent == "self"
+        assert env.opponent == "random"
         assert env.reward_mode == "sparse"
         assert env.invalid_move_penalty == -1.0
         assert env.invalid_move_mode == "penalty"

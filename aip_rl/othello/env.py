@@ -3,13 +3,13 @@ Othello (Reversi) environment for reinforcement learning.
 
 This module provides a Gymnasium-compatible environment for training RL agents
 to play Othello using a high-performance Rust game engine. The environment
-supports various training configurations including self-play, different opponent
+supports various training configurations including different opponent
 policies, multiple reward structures, and action masking.
 
 Key Features:
     - High-performance Rust game engine (<1ms per step)
     - Gymnasium API compliance for RL framework integration
-    - Self-play and configurable opponent policies
+    - Configurable opponent policies
     - Multiple reward modes (sparse, dense, custom)
     - Action masking for invalid move handling
     - State persistence for replay analysis
@@ -44,7 +44,7 @@ Example:
     >>>
     >>> config = PPOConfig().environment(
     ...     env="Othello-v0",
-    ...     env_config={"opponent": "self", "reward_mode": "sparse"}
+    ...     env_config={"opponent": "random", "reward_mode": "sparse"}
     ... )
     >>> algo = config.build()
     >>> result = algo.train()
@@ -98,8 +98,7 @@ class OthelloEnv(gym.Env):
 
     Args:
         opponent (Union[str, Callable], optional): Opponent policy. Options:
-            - "self" (default): Self-play mode, agent plays both sides
-            - "random": Random opponent selecting random valid moves
+            - "random" (default): Random opponent selecting random valid moves
             - "greedy": Greedy opponent maximizing pieces flipped
             - callable: Custom policy function(observation) -> action
 
@@ -171,7 +170,7 @@ class OthelloEnv(gym.Env):
 
     def __init__(
         self,
-        opponent: Union[str, Callable] = "self",
+        opponent: Union[str, Callable] = "random",
         reward_mode: str = "sparse",
         reward_fn: Optional[Callable] = None,
         invalid_move_penalty: float = -1.0,
@@ -184,7 +183,6 @@ class OthelloEnv(gym.Env):
 
         Args:
             opponent: Opponent policy configuration. Options:
-                - "self": Self-play mode where agent plays both sides
                 - "random": Random opponent selecting random valid moves
                 - "greedy": Greedy opponent maximizing pieces flipped per move
                 - callable: Custom policy function with signature:
@@ -235,11 +233,11 @@ class OthelloEnv(gym.Env):
                 - reward_mode="custom" but reward_fn is None
                 - invalid_move_mode not in ["penalty", "random", "error"]
                 - render_mode not in [None, "human", "ansi", "rgb_array"]
-                - opponent not in ["self", "random", "greedy"] and not callable
+                - opponent not in ["random", "greedy"] and not callable
                 - start_player not in ["black", "white", "random"]
 
         Example:
-            >>> # Default configuration (self-play, sparse rewards)
+            >>> # Default configuration (random opponent, sparse rewards)
             >>> env = OthelloEnv()
             >>>
             >>> # Dense rewards with greedy opponent
@@ -288,14 +286,14 @@ class OthelloEnv(gym.Env):
 
         # Validate opponent parameter
         if isinstance(opponent, str):
-            if opponent not in ["self", "random", "greedy"]:
+            if opponent not in ["random", "greedy"]:
                 raise ValueError(
                     f"Invalid opponent: {opponent}. "
-                    "Must be 'self', 'random', 'greedy', or a callable."
+                    "Must be 'random', 'greedy', or a callable."
                 )
         elif not callable(opponent):
             raise ValueError(
-                "opponent must be a string ('self', 'random', 'greedy') "
+                "opponent must be a string ('random', 'greedy') "
                 "or a callable function."
             )
 
@@ -476,9 +474,9 @@ class OthelloEnv(gym.Env):
         Execute one step in the environment.
 
         Takes an action (board position) and applies it to the game. If the
-        action is invalid, handles it according to invalid_move_mode. If
-        opponent is not "self", automatically executes opponent's move after
-        the agent's move.
+        action is invalid, handles it according to invalid_move_mode. The
+        environment automatically executes the opponent's move after the
+        agent's move (if the game is not over).
 
         Args:
             action: Integer action in range [0, 63] representing board position.
@@ -528,7 +526,7 @@ class OthelloEnv(gym.Env):
             >>> print(f"Reward: {reward}, Game over: {terminated}")
 
         Notes:
-            - If opponent != "self", opponent's move is executed automatically
+            - Opponent's move is executed automatically after the agent's move
             - Observation is always from agent's perspective
             - Turn passing is handled automatically when no valid moves exist
             - Action mask in info dictionary indicates valid moves for next step
@@ -571,13 +569,8 @@ class OthelloEnv(gym.Env):
         # Calculate reward for agent's move (from current agent_player perspective)
         reward = self._calculate_reward(pieces_flipped, game_over)
 
-        # In self-play mode, flip agent_player for next move
-        if self.opponent == "self" and not game_over:
-            # Agent switches sides in self-play
-            self.agent_player = 1 - self.agent_player
-
-        # If NOT self-play mode and game not over, execute opponent move
-        if self.opponent != "self" and not game_over:
+        # Execute opponent move if game not over
+        if not game_over:
             # Check if opponent has valid moves
             valid_moves = self.game.get_valid_moves()
             if np.any(valid_moves):
@@ -698,8 +691,7 @@ class OthelloEnv(gym.Env):
                 action = np.random.choice(valid_indices)
 
         else:
-            # Should not reach here if opponent is "self"
-            # or if validation in __init__ worked correctly
+            # Should not reach here if validation in __init__ worked correctly
             raise ValueError(f"Unknown opponent type: {self.opponent}")
 
         # Execute the opponent's move
@@ -1143,11 +1135,6 @@ class OthelloEnv(gym.Env):
                 raise ValueError(
                     f"Invalid move {action} in move history. Cannot reconstruct state."
                 )
-
-            # In self-play mode, agent_player is flipped during replay
-            # We need to track this but restore it at the end
-            if self.opponent == "self" and not game_over:
-                self.agent_player = 1 - self.agent_player
 
             if game_over:
                 break

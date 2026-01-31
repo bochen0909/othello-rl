@@ -127,7 +127,7 @@ def forward(self, input_dict, state, seq_lens):
 **Notes**:
 - Rewards are sparse (+1 for win, -1 for loss, 0 for draw)
 - Early training shows expected variance
-- Agent is learning to play against itself (self-play mode)
+- Agent is learning to play against a fixed opponent
 
 ### Inference Performance
 

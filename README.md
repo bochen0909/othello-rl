@@ -125,7 +125,7 @@ python scripts/train_othello.py \
 python scripts/train_othello.py \
   --num-iterations 500 \
   --checkpoint-freq 25 \
-  --opponent self \
+  --opponent random \
   --reward-mode sparse \
   --num-workers 8 \
   --num-gpus 1 \
@@ -141,7 +141,7 @@ args = argparse.Namespace(
     num_iterations=100,
     checkpoint_freq=10,
     checkpoint_dir="checkpoints",
-    opponent="self",
+    opponent="random",
     reward_mode="sparse",
     start_player="random",
     lr=0.0001,
@@ -169,7 +169,7 @@ python scripts/train_othello.py --help
 **Common Options:**
 - `--num-iterations`: Number of training iterations (default: 200)
 - `--checkpoint-freq`: Save checkpoint every N iterations (default: 20)
-- `--opponent`: Opponent type - `self`, `random` (default: `self`)
+- `--opponent`: Opponent type - `random`, `greedy` (default: `random`)
 - `--reward-mode`: Reward structure - `sparse`, `heuristic` (default: `sparse`)
 - `--num-workers`: Parallel environment workers (default: 4)
 - `--num-gpus`: GPUs to use (default: 0)
@@ -212,7 +212,7 @@ The environment supports extensive configuration through initialization paramete
 ```python
 env = gym.make(
     "Othello-v0",
-    opponent="self",              # Opponent policy
+    opponent="random",            # Opponent policy
     reward_mode="sparse",         # Reward structure
     invalid_move_penalty=-1.0,    # Penalty for invalid moves
     invalid_move_mode="penalty",  # How to handle invalid moves
@@ -222,8 +222,7 @@ env = gym.make(
 
 ### Opponent Policies
 
-- **`"self"`** (default): Self-play mode - agent plays both sides
-- **`"random"`**: Random opponent that selects random valid moves
+- **`"random"`** (default): Random opponent that selects random valid moves
 - **`"greedy"`**: Greedy opponent that maximizes pieces flipped
 - **`callable`**: Custom policy function that takes observation and returns action
 
@@ -366,7 +365,7 @@ python scripts/train_othello.py --num-iterations 100
 # With custom options
 python scripts/train_othello.py \
   --num-iterations 200 \
-  --opponent self \
+  --opponent random \
   --reward-mode sparse \
   --num-workers 8 \
   --checkpoint-freq 25
@@ -384,7 +383,7 @@ args = argparse.Namespace(
     num_iterations=100,
     checkpoint_freq=10,
     checkpoint_dir="checkpoints",
-    opponent="self",
+    opponent="random",
     reward_mode="sparse",
     start_player="random",
     lr=0.0001,
@@ -418,7 +417,7 @@ config = (
     .environment(
         env="Othello-v0",
         env_config={
-            "opponent": "self",
+            "opponent": "random",
             "reward_mode": "sparse",
         }
     )

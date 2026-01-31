@@ -718,8 +718,8 @@ class TestStepMethodProperties:
             assert state["agent_player"] == agent_player_before
 
 
-class TestSelfPlayProperties:
-    """Property-based tests for self-play and opponent logic."""
+class TestOpponentProperties:
+    """Property-based tests for opponent logic."""
 
     @given(valid_move_sequence(), st.sampled_from(["random", "greedy"]))
     @settings(max_examples=100, deadline=None)
@@ -935,7 +935,7 @@ class TestSelfPlayProperties:
 
         **Validates: Requirements 6.3**
 
-        For any game in self-play mode, the observation should always be from
+        For any game, the observation should always be from
         the agent's perspective regardless of which player (Black/White) the
         agent is currently controlling, meaning the agent's pieces are always
         in channel 0.
@@ -1521,7 +1521,7 @@ class TestConfigurationProperties:
         with pytest.raises(ValueError, match="Invalid reward_mode"):
             OthelloEnv(reward_mode=invalid_mode)
 
-    @given(st.sampled_from(["self", "random", "greedy"]))
+    @given(st.sampled_from(["random", "greedy"]))
     @settings(max_examples=50, deadline=None)
     def test_valid_opponent_types(self, opponent_type):
         """
@@ -1544,7 +1544,7 @@ class TestConfigurationProperties:
         the environment initialization should raise a ValueError.
         """
         # Skip if accidentally generated a valid opponent
-        if invalid_opponent in ["self", "random", "greedy"]:
+        if invalid_opponent in ["random", "greedy"]:
             return
 
         with pytest.raises(ValueError, match="Invalid opponent"):
@@ -1650,7 +1650,7 @@ class TestConfigurationProperties:
 
     @given(
         st.sampled_from(["sparse", "dense"]),
-        st.sampled_from(["self", "random", "greedy"]),
+        st.sampled_from(["random", "greedy"]),
         st.sampled_from(["penalty", "random", "error"]),
         st.sampled_from([None, "ansi", "human", "rgb_array"]),
     )

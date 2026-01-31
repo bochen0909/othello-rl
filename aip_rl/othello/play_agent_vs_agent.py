@@ -89,7 +89,7 @@ def play_game(
 ) -> None:
     env = gym.make(
         "Othello-v0",
-        opponent="self",
+        opponent=white_policy,
         reward_mode="sparse",
         invalid_move_mode="error",
         render_mode="human",
@@ -107,27 +107,18 @@ def play_game(
     env.render()
 
     terminated = False
-    move_count = 0
 
     while not terminated:
-        move_count += 1
-        current_player = info["current_player"]
-        is_black_turn = current_player == 0
-        policy = black_policy if is_black_turn else white_policy
-        player_name = "Black" if is_black_turn else "White"
-
-        action = _select_action(policy, obs, info, env)
+        action = _select_action(black_policy, obs, info, env)
         if action < 0:
             if env.unwrapped.game.get_winner() != 3:
                 terminated = True
                 break
-            print(f"No valid moves for {player_name}; ending to avoid stall.")
+            print("No valid moves for Black; ending to avoid stall.")
             break
 
         obs, reward, terminated, truncated, info = env.step(action)
-        print(
-            f"{player_name} played: {action} (row {action//8}, col {action%8})"
-        )
+        print(f"Black played: {action} (row {action//8}, col {action%8})")
         env.render()
 
     print("\n" + "=" * 60)
