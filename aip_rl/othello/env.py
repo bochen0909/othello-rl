@@ -758,7 +758,15 @@ class OthelloEnv(gym.Env):
 
         elif callable(self.opponent):
             # Custom policy: call function with observation
+            # Get the opponent's player ID (current player)
+            current_player = self.game.get_current_player()
+
+            # Temporarily swap agent_player to get observation from opponent's perspective
+            saved_agent_player = self.agent_player
+            self.agent_player = current_player
             obs = self._get_observation()
+            self.agent_player = saved_agent_player
+
             action = self.opponent(obs)
 
             # Validate that callable returned a valid move
