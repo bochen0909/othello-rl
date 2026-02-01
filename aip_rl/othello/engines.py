@@ -82,11 +82,9 @@ def get_engine_opponent(engine_name: str) -> Callable:
             opponent_channel = observation[1]
 
             # Reconstruct board: 0=Empty, 1=Agent pieces, 2=Opponent pieces
-            # Since we're always called from opponent's perspective after agent moves,
-            # we need to flip: Agent becomes opponent and opponent becomes agent
             board = np.zeros((8, 8), dtype=np.uint8)
-            board[agent_channel.astype(bool)] = 2  # Agent pieces become white (2)
-            board[opponent_channel.astype(bool)] = 1  # Opponent pieces become black (1)
+            board[agent_channel.astype(bool)] = 1  # Agent pieces are player 1
+            board[opponent_channel.astype(bool)] = 2  # Opponent pieces are player 2
 
             board = board.flatten().astype(np.uint8)
         else:
@@ -106,7 +104,7 @@ def get_engine_opponent(engine_name: str) -> Callable:
             raise ValueError(f"Board must have 64 cells, got {len(board)}")
 
         # Call the engine to compute move
-        # Player is 1 (Black) since we reconstructed the board with agent=2, opponent=1
+        # Player is 1 since we placed agent pieces as 1 and opponent pieces as 2
         move = engine_func(list(board), 1)
 
         # Check if no valid moves (u8::MAX = 255)

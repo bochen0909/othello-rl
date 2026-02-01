@@ -8,15 +8,17 @@ import numpy as np
 import gymnasium as gym
 
 from aip_rl.othello.play_common import load_trained_agent
+from aip_rl.othello.engines import get_available_engines, get_engine_opponent
 
 
 def parse_args():
     """Parse command line arguments."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Play Othello with agent vs agent"
-    )
+    available_engines = get_available_engines()
+    engines_str = ", ".join(available_engines)
+
+    parser = argparse.ArgumentParser(description="Play Othello with agent vs agent")
     parser.add_argument(
         "--black-checkpoint",
         type=str,
@@ -32,16 +34,16 @@ def parse_args():
     parser.add_argument(
         "--black-opponent",
         type=str,
-        choices=["random", "greedy"],
+        choices=["random", "greedy"] + available_engines,
         default="random",
-        help="Policy for Black if no checkpoint (default: random)",
+        help=f"Policy for Black if no checkpoint (default: random). Available engines: {engines_str}",
     )
     parser.add_argument(
         "--white-opponent",
         type=str,
-        choices=["random", "greedy"],
+        choices=["random", "greedy"] + available_engines,
         default="random",
-        help="Policy for White if no checkpoint (default: random)",
+        help=f"Policy for White if no checkpoint (default: random). Available engines: {engines_str}",
     )
     parser.add_argument(
         "--cpu-only",
@@ -57,12 +59,22 @@ def _policy_label(policy, checkpoint_path: str | None) -> str:
         return f"trained agent ({checkpoint_path})"
     if isinstance(policy, str):
         return policy
+    # Check if it's an engine opponent (has __name__ attribute starting with "engine_")
+    if hasattr(policy, "__name__") and policy.__name__.startswith("engine_"):
+        engine_name = policy.__name__.replace("engine_", "")
+        return f"{engine_name} engine"
     return "trained agent"
 
 
 def _select_policy(checkpoint_path: str | None, fallback: str, cpu_only: bool):
     if checkpoint_path:
         return load_trained_agent(checkpoint_path, cpu_only)
+
+    # Check if it's an engine opponent
+    if fallback in get_available_engines():
+        return get_engine_opponent(fallback)
+
+    # Otherwise treat it as a built-in policy (random, greedy)
     return fallback
 
 
@@ -84,9 +96,7 @@ def _select_action(policy, obs, info, env) -> int:
     return action
 
 
-def play_game(
-    black_policy, white_policy, black_label: str, white_label: str
-) -> None:
+def play_game(black_policy, white_policy, black_label: str, white_label: str) -> None:
     env = gym.make(
         "Othello-v0",
         opponent=white_policy,
@@ -118,7 +128,7 @@ def play_game(
             break
 
         obs, reward, terminated, truncated, info = env.step(action)
-        print(f"Black played: {action} (row {action//8}, col {action%8})")
+        print(f"Black played: {action} (row {action // 8}, col {action % 8})")
         env.render()
 
     print("\n" + "=" * 60)

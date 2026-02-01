@@ -11,15 +11,32 @@ from aip_rl.othello.play_agent_vs_agent import (
     _select_action,
     _select_policy,
 )
+from aip_rl.othello.engines import get_available_engines, get_engine_opponent
+
+
+def _select_policy_eval(checkpoint_path: str | None, fallback: str, cpu_only: bool):
+    """Select policy, including engine opponents."""
+    if checkpoint_path:
+        from aip_rl.othello.play_common import load_trained_agent
+
+        return load_trained_agent(checkpoint_path, cpu_only)
+
+    # Check if it's an engine opponent
+    if fallback in get_available_engines():
+        return get_engine_opponent(fallback)
+
+    # Otherwise treat it as a built-in policy (random, greedy)
+    return fallback
 
 
 def parse_args():
     """Parse command line arguments."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Evaluate agent vs agent win rates"
-    )
+    available_engines = get_available_engines()
+    engines_str = ", ".join(available_engines)
+
+    parser = argparse.ArgumentParser(description="Evaluate agent vs agent win rates")
     parser.add_argument(
         "--black-checkpoint",
         type=str,
@@ -35,16 +52,16 @@ def parse_args():
     parser.add_argument(
         "--black-opponent",
         type=str,
-        choices=["random", "greedy"],
+        choices=["random", "greedy"] + available_engines,
         default="random",
-        help="Policy for Black if no checkpoint (default: random)",
+        help=f"Policy for Black if no checkpoint (default: random). Available engines: {engines_str}",
     )
     parser.add_argument(
         "--white-opponent",
         type=str,
-        choices=["random", "greedy"],
+        choices=["random", "greedy"] + available_engines,
         default="random",
-        help="Policy for White if no checkpoint (default: random)",
+        help=f"Policy for White if no checkpoint (default: random). Available engines: {engines_str}",
     )
     parser.add_argument(
         "--cpu-only",
@@ -116,10 +133,10 @@ def play_games(
 def main() -> None:
     args = parse_args()
 
-    black_policy = _select_policy(
+    black_policy = _select_policy_eval(
         args.black_checkpoint, args.black_opponent, args.cpu_only
     )
-    white_policy = _select_policy(
+    white_policy = _select_policy_eval(
         args.white_checkpoint, args.white_opponent, args.cpu_only
     )
 

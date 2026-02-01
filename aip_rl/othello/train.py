@@ -88,6 +88,10 @@ def train_othello(args):
     )
     config["num_env_runners"] = args.num_workers
 
+    # Set timeout for sample collection
+    # Slow opponents (drohh, aelskels) may exceed the default 60s timeout
+    config["sample_timeout_s"] = args.sample_timeout_s
+
     # Set custom model (model is a dict attribute, not a method)
     # Include max_seq_len for RNN compatibility
     # (even though we're not using RNNs)
@@ -99,8 +103,10 @@ def train_othello(args):
     algo = config.build()
 
     if args.resume_checkpoint:
-        print(f"Restoring checkpoint from {args.resume_checkpoint}...")
-        algo.restore(args.resume_checkpoint)
+        # Convert relative path to absolute path
+        resume_checkpoint = os.path.abspath(args.resume_checkpoint)
+        print(f"Restoring checkpoint from {resume_checkpoint}...")
+        algo.restore(resume_checkpoint)
 
     checkpoint_dir = os.path.abspath(args.checkpoint_dir)
     os.makedirs(checkpoint_dir, exist_ok=True)
@@ -275,6 +281,14 @@ def main():
         type=int,
         default=20,
         help="Number of episodes per evaluation (default: 20)",
+    )
+
+    # Timeout parameter
+    parser.add_argument(
+        "--sample-timeout-s",
+        type=int,
+        default=300,
+        help="Sample collection timeout in seconds (default: 300, increase for slow opponents)",
     )
 
     args = parser.parse_args()

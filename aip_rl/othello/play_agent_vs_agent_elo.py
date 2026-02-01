@@ -224,6 +224,7 @@ def main() -> None:
     ]
 
     elo_path = os.path.join(args.folder, "elo.json")
+    matchups_path = os.path.join(args.folder, "matchups.json")
     ratings = load_ratings(elo_path)
 
     ratings = {name: rating for name, rating in ratings.items() if name in agent_names}
@@ -231,6 +232,12 @@ def main() -> None:
     new_agents = [name for name in agent_names if name not in ratings]
     for name in new_agents:
         ratings[name] = float(args.initial_rating)
+
+    # Load or initialize matchup statistics
+    matchups_stats = {}
+    if os.path.exists(matchups_path):
+        with open(matchups_path, "r", encoding="utf-8") as f:
+            matchups_stats = json.load(f)
 
     pairs = [(a, b) for a, b in combinations(agent_names, 2)]
 
@@ -243,6 +250,10 @@ def main() -> None:
         backup_file(elo_path)
         with open(elo_path, "w", encoding="utf-8") as f:
             json.dump(ratings, f, indent=2, sort_keys=True)
+            f.write("\n")
+        backup_file(matchups_path)
+        with open(matchups_path, "w", encoding="utf-8") as f:
+            json.dump(matchups_stats, f, indent=2, sort_keys=True)
             f.write("\n")
         return
 
@@ -314,6 +325,16 @@ def main() -> None:
                 result,
             ) in match_results:
                 winners = result.get()
+
+                # Track matchup statistics
+                matchup_key = f"{black_agent} (black) vs {white_agent} (white)"
+                if matchup_key not in matchups_stats:
+                    matchups_stats[matchup_key] = {
+                        "black_wins": 0,
+                        "white_wins": 0,
+                        "draws": 0,
+                    }
+
                 for winner in winners:
                     score_black = score_from_winner(winner)
                     r_b = ratings[black_agent]
@@ -322,15 +343,41 @@ def main() -> None:
                     ratings[black_agent] = r_b
                     ratings[white_agent] = r_w
 
+                    # Update matchup statistics
+                    if winner == 2:  # Draw
+                        matchups_stats[matchup_key]["draws"] += 1
+                    elif winner == 0:  # Black wins
+                        matchups_stats[matchup_key]["black_wins"] += 1
+                    else:  # White wins
+                        matchups_stats[matchup_key]["white_wins"] += 1
+
+                # Print Elo update
                 print(
                     f"    Updated ratings: {black_agent} {ratings[black_agent]:.1f}, "
                     f"{white_agent} {ratings[white_agent]:.1f}"
+                )
+
+                # Print matchup statistics
+                stats = matchups_stats[matchup_key]
+                total = stats["black_wins"] + stats["white_wins"] + stats["draws"]
+                print(
+                    f"    Matchup stats: Black {stats['black_wins']}/{total} ({stats['black_wins'] / total:.1%}), "
+                    f"White {stats['white_wins']}/{total} ({stats['white_wins'] / total:.1%}), "
+                    f"Draws {stats['draws']}/{total} ({stats['draws'] / total:.1%})"
                 )
 
     backup_file(elo_path)
     with open(elo_path, "w", encoding="utf-8") as f:
         json.dump(ratings, f, indent=2, sort_keys=True)
         f.write("\n")
+
+    backup_file(matchups_path)
+    with open(matchups_path, "w", encoding="utf-8") as f:
+        json.dump(matchups_stats, f, indent=2, sort_keys=True)
+        f.write("\n")
+
+    print(f"\nElo ratings saved to: {elo_path}")
+    print(f"Matchup details saved to: {matchups_path}")
 
 
 if __name__ == "__main__":
