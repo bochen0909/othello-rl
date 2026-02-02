@@ -60,6 +60,23 @@ def parse_args() -> argparse.Namespace:
         default=1000.0,
         help="Initial rating for new agents (default: 1000)",
     )
+    parser.add_argument(
+        "--soft-engines",
+        action="store_true",
+        help="Use soft (probabilistic) engine decisions instead of deterministic",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=1.0,
+        help="Temperature for soft engine sampling (default: 1.0, range: 0.1-10.0)",
+    )
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=None,
+        help="Top-k moves to sample from (optional, default: all legal moves)",
+    )
     return parser.parse_args()
 
 
@@ -155,6 +172,8 @@ def play_match_games(
     num_games: int,
     checkpoint_path: Dict[str, str] | None = None,
     cpu_only: bool = True,
+    soft_temperature: float = 1.0,
+    soft_top_k: int | None = None,
 ) -> List[int]:
     """Play a single match and return list of winners.
 
@@ -170,6 +189,9 @@ def play_match_games(
             return agent_name
         if agent_name in ("aelskels", "drohh", "nealetham"):
             return get_engine_opponent(agent_name)
+        if agent_name in ("aelskels_soft", "drohh_soft", "nealetham_soft"):
+            # Soft engines are handled as callables by the environment
+            return agent_name
         # For checkpoint agents, we need the checkpoint path
         if checkpoint_path and agent_name in checkpoint_path:
             return _select_policy(checkpoint_path[agent_name], "random", cpu_only)
@@ -186,6 +208,12 @@ def play_match_games(
         render_mode=None,
         start_player="black",
     )
+
+    # Set soft engine parameters if using soft engines
+    if isinstance(white_policy, str) and white_policy.endswith("_soft"):
+        env.unwrapped.soft_temperature = soft_temperature
+        if soft_top_k is not None:
+            env.unwrapped.soft_top_k = soft_top_k
 
     winners = []
     for _ in range(num_games):
@@ -211,6 +239,15 @@ def play_match_games(
 def main() -> None:
     args = parse_args()
 
+    # Validate temperature range
+    if args.soft_engines:
+        if not (0.1 <= args.temperature <= 10.0):
+            raise SystemExit(
+                f"Temperature must be in range [0.1, 10.0], got {args.temperature}"
+            )
+        if args.top_k is not None and args.top_k < 1:
+            raise SystemExit(f"top_k must be positive, got {args.top_k}")
+
     if not os.path.isdir(args.folder):
         raise SystemExit(f"Folder not found: {args.folder}")
 
@@ -222,6 +259,16 @@ def main() -> None:
         "drohh",
         "nealetham",
     ]
+
+    # Replace engine names with soft variants if --soft-engines flag is set
+    if args.soft_engines:
+        # Map deterministic engines to soft versions
+        engine_mapping = {
+            "aelskels": "aelskels_soft",
+            "drohh": "drohh_soft",
+            "nealetham": "nealetham_soft",
+        }
+        agent_names = [engine_mapping.get(name, name) for name in agent_names]
 
     elo_path = os.path.join(args.folder, "elo.json")
     matchups_path = os.path.join(args.folder, "matchups.json")
@@ -310,6 +357,8 @@ def main() -> None:
                     kwds={
                         "checkpoint_path": checkpoint_agents,
                         "cpu_only": args.cpu_only,
+                        "soft_temperature": args.temperature,
+                        "soft_top_k": args.top_k,
                     },
                 )
                 match_results.append(

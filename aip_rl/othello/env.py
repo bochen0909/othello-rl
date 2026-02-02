@@ -901,6 +901,10 @@ class OthelloEnv(gym.Env):
             # Should not reach here if validation in __init__ worked correctly
             raise ValueError(f"Unknown opponent type: {self.opponent}")
 
+        # Execute the opponent's move for random and greedy cases
+        self.game.step(action)
+        return int(action)
+
     def _execute_soft_opponent_move(self, opponent_name: str) -> Optional[int]:
         """
         Execute a soft engine move for the given opponent.

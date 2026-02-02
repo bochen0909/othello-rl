@@ -13,8 +13,11 @@ pub mod drohh;
 pub mod nealetham;
 
 pub use aelskens::compute_move as compute_move_aelskens;
+pub use aelskens::compute_move_scores as compute_move_scores_aelskens;
 pub use drohh::compute_move as compute_move_drohh;
+pub use drohh::compute_move_scores as compute_move_scores_drohh;
 pub use nealetham::compute_move as compute_move_nealetham;
+pub use nealetham::compute_move_scores as compute_move_scores_nealetham;
 
 /// Simple board representation for engines
 /// Cells are represented as a flat array of 64 elements

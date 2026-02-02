@@ -49,7 +49,36 @@ pub fn compute_move(board: &Board, player: u8) -> u8 {
     best_move.unwrap_or(u8::MAX)
 }
 
-/// Get all valid moves for a player as a 64-element bool array
+/// Compute heuristic scores for all legal moves on the board
+///
+/// # Arguments
+/// * `board` - Current board state as [u8; 64] where 0=Empty, 1=Black, 2=White
+/// * `player` - Current player (1 = Black, 2 = White)
+///
+/// # Returns
+/// Array of 64 scores (i32) where legal moves have non-zero scores and illegal moves have 0
+pub fn compute_move_scores(board: &Board, player: u8) -> [i32; 64] {
+    let mut scores = [0i32; 64];
+    let valid_moves = get_valid_moves(board, player);
+
+    // For each position on the board
+    for i in 0..64 {
+        if valid_moves[i] {
+            // This is a legal move - evaluate the board after this move
+            let row = i / 8;
+            let col = i % 8;
+
+            if let Some(new_board) = apply_move_to_board(board, player, row, col) {
+                // Use the heuristic to score this resulting position
+                scores[i] = heuristic(&new_board);
+            }
+        }
+        // If not a valid move, score remains 0
+    }
+
+    scores
+}
+
 fn get_valid_moves(board: &Board, player: u8) -> [bool; 64] {
     let mut valid_moves = [false; 64];
 
@@ -584,5 +613,79 @@ mod tests {
         // 3. Deterministic behavior
         let move2 = compute_move(&board, BLACK);
         assert_eq!(move_result, move2);
+    }
+
+    #[test]
+    fn test_compute_move_scores_returns_64_elements() {
+        let mut board = [EMPTY; 64];
+        board[27] = WHITE;
+        board[28] = BLACK;
+        board[35] = BLACK;
+        board[36] = WHITE;
+
+        let scores = compute_move_scores(&board, BLACK);
+        assert_eq!(scores.len(), 64);
+    }
+
+    #[test]
+    fn test_compute_move_scores_legal_moves_non_zero() {
+        let mut board = [EMPTY; 64];
+        board[27] = WHITE;
+        board[28] = BLACK;
+        board[35] = BLACK;
+        board[36] = WHITE;
+
+        let scores = compute_move_scores(&board, BLACK);
+        let valid_moves = get_valid_moves(&board, BLACK);
+
+        // All legal moves should have non-zero scores
+        for i in 0..64 {
+            if valid_moves[i] {
+                assert_ne!(
+                    scores[i], 0,
+                    "Legal move at index {} should have non-zero score",
+                    i
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_compute_move_scores_illegal_moves_zero() {
+        let mut board = [EMPTY; 64];
+        board[27] = WHITE;
+        board[28] = BLACK;
+        board[35] = BLACK;
+        board[36] = WHITE;
+
+        let scores = compute_move_scores(&board, BLACK);
+        let valid_moves = get_valid_moves(&board, BLACK);
+
+        // All illegal moves should have zero scores
+        for i in 0..64 {
+            if !valid_moves[i] {
+                assert_eq!(
+                    scores[i], 0,
+                    "Illegal move at index {} should have zero score",
+                    i
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_compute_move_scores_initial_board() {
+        let mut board = [EMPTY; 64];
+        board[27] = WHITE;
+        board[28] = BLACK;
+        board[35] = BLACK;
+        board[36] = WHITE;
+
+        let scores = compute_move_scores(&board, BLACK);
+
+        // Count non-zero scores (legal moves)
+        let non_zero_count = scores.iter().filter(|&&s| s != 0).count();
+        // Initial board for Black should have 4 legal moves
+        assert_eq!(non_zero_count, 4);
     }
 }
