@@ -19,6 +19,8 @@ import gymnasium as gym
 from aip_rl.othello.play_agent_vs_agent import _select_action, _select_policy
 from aip_rl.othello.engines import get_engine_opponent
 
+import numpy as np
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -189,7 +191,11 @@ def play_match_games(
             return agent_name
         if agent_name in ("aelskels", "drohh", "nealetham"):
             return get_engine_opponent(agent_name)
-        if agent_name in ("aelskels_soft", "drohh_soft", "nealetham_soft"):
+        if agent_name in (
+            "aelskels_soft",
+            "drohh_soft",
+            "nealetham_soft",
+        ):
             # Soft engines are handled as callables by the environment
             return agent_name
         # For checkpoint agents, we need the checkpoint path
@@ -212,6 +218,12 @@ def play_match_games(
     # Set soft engine parameters if using soft engines
     if isinstance(white_policy, str) and white_policy.endswith("_soft"):
         env.unwrapped.soft_temperature = soft_temperature
+        if soft_top_k is not None:
+            env.unwrapped.soft_top_k = soft_top_k
+    elif callable(white_policy):
+        # For checkpoint policies (callables), also enable soft sampling if soft_temperature is set
+        env.unwrapped.soft_temperature = soft_temperature
+        env.unwrapped.soft_checkpoint_policy = True
         if soft_top_k is not None:
             env.unwrapped.soft_top_k = soft_top_k
 
