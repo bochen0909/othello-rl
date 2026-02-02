@@ -89,6 +89,12 @@ def _select_action(policy, obs, info, env) -> int:
             return int(np.random.choice(valid_indices))
         if policy == "greedy":
             return int(env.unwrapped._get_greedy_move())
+        # Handle soft engine variants
+        if policy.endswith("_soft"):
+            return int(env.unwrapped._get_soft_engine_move(policy))
+        # Handle regular engine opponents
+        if policy in ("aelskels", "drohh", "nealetham"):
+            return int(env.unwrapped._get_greedy_move())
 
     action = int(policy(obs))
     if not valid_moves[action]:

@@ -576,6 +576,96 @@ config = (
 # This creates 8 * 4 = 32 parallel environments
 ```
 
+## Agent Evaluation: ELO Ratings
+
+### Computing Pair-Game Performance with ELO Ratings
+
+Evaluate agent performance using round-robin tournaments with Elo rating calculation:
+
+#### Basic Evaluation (Deterministic)
+```bash
+python scripts/play_agent_vs_agent_elo.py --folder zoo --games-per-side 50 --rounds 1
+```
+
+#### Evaluation with Soft Engines (Probabilistic - Recommended)
+```bash
+python scripts/play_agent_vs_agent_elo.py \
+  --folder zoo \
+  --games-per-side 50 \
+  --soft-engines \
+  --temperature 1.0 \
+  --rounds 1
+```
+
+#### Soft Engine Evaluation with Top-K Sampling
+```bash
+python scripts/play_agent_vs_agent_elo.py \
+  --folder zoo \
+  --games-per-side 50 \
+  --soft-engines \
+  --temperature 0.8 \
+  --top-k 5 \
+  --rounds 5
+```
+
+#### Extended Evaluation with Multiple Rounds
+```bash
+python scripts/play_agent_vs_agent_elo.py \
+  --folder zoo \
+  --games-per-side 100 \
+  --soft-engines \
+  --temperature 1.0 \
+  --rounds 3 \
+  --k-factor 32.0
+```
+
+### ELO Evaluation Options
+
+**Core Arguments:**
+- `--folder`: Directory containing agent checkpoint folders (default: `zoo`)
+- `--games-per-side`: Number of games per side in each matchup (default: 50)
+- `--rounds`: Number of evaluation rounds to run (default: 1)
+- `--k-factor`: Elo K-factor controlling rating volatility (default: 32.0)
+- `--initial-rating`: Starting rating for new agents (default: 1000.0)
+
+**Soft Engine Options (for probabilistic evaluation):**
+- `--soft-engines`: Enable probabilistic engine decisions instead of deterministic
+- `--temperature`: Sampling temperature for soft engines (range: 0.1-10.0, default: 1.0)
+  - Lower values (e.g., 0.1-0.5): More deterministic, strategic play
+  - Mid values (e.g., 0.8-1.2): Balanced randomness
+  - Higher values (e.g., 5.0-10.0): More exploratory, varied play
+- `--top-k`: Restrict sampling to top-k legal moves (optional, default: all moves)
+
+**Performance Options:**
+- `--cpu-only`: Force CPU loading for checkpoints (default: true)
+
+### Output Files
+
+The script generates two files in the target folder:
+
+1. **`elo.json`**: Current Elo ratings for all agents
+2. **`matchups.json`**: Detailed statistics for each matchup:
+   - Black wins, White wins, Draws
+   - Win rates by side
+
+Example output structure:
+```json
+{
+  "agent_1": 1050.3,
+  "agent_2": 980.5,
+  "random": 850.0,
+  "greedy": 920.0
+}
+```
+
+### Why Use Soft Engines?
+
+Soft (probabilistic) engines provide more realistic evaluation:
+- **Avoid Deterministic Loops**: Prevents overfitting to specific engine strategies
+- **Varied Play**: Different temperature settings produce different playstyles
+- **Realistic Variance**: Games have different outcomes despite same opponents
+- **Better Statistics**: More varied results with soft engines improve rating reliability
+
 ## Advanced Features
 
 ### State Persistence

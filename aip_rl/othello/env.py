@@ -701,32 +701,49 @@ class OthelloEnv(gym.Env):
         import othello_rust
 
         # Get move scores from the appropriate Rust function
+        # Map soft engine names to their hard engine counterparts
+        hard_engine_map = {
+            "aelskels_soft": "aelskels",
+            "drohh_soft": "drohh",
+            "nealetham_soft": "nealetham",
+        }
+
+        if opponent_name not in hard_engine_map:
+            raise ValueError(f"Invalid soft engine name: {opponent_name}")
+
+        hard_engine_name = hard_engine_map[opponent_name]
+
+        # Try to get scores from the soft engine, fall back to hard engine
         if opponent_name == "aelskels_soft":
             try:
                 scores = othello_rust.compute_move_scores_aelskens_py(
                     board.tolist(), current_player + 1
                 )
             except AttributeError:
-                # Fallback to the basic function if score function isn't available
-                return self._execute_opponent_move()
+                # Fallback to the hard engine if score function isn't available
+                return self._get_hard_engine_move(
+                    hard_engine_name, board, current_player
+                )
         elif opponent_name == "drohh_soft":
             try:
                 scores = othello_rust.compute_move_scores_drohh_py(
                     board.tolist(), current_player + 1
                 )
             except AttributeError:
-                # Fallback to the basic function if score function isn't available
-                return self._execute_opponent_move()
+                # Fallback to the hard engine if score function isn't available
+                return self._get_hard_engine_move(
+                    hard_engine_name, board, current_player
+                )
         elif opponent_name == "nealetham_soft":
             try:
                 scores = othello_rust.compute_move_scores_nealetham_py(
                     board.tolist(), current_player + 1
                 )
             except AttributeError:
-                # Fallback to the basic function if score function isn't available
-                return self._execute_opponent_move()
-        else:
-            raise ValueError(f"Invalid soft engine name: {opponent_name}")
+                # Fallback to the hard engine if score function isn't available
+                return self._get_hard_engine_move(
+                    hard_engine_name, board, current_player
+                )
 
         # Apply temperature-based softmax sampling
         # First, normalize scores to handle negative values
@@ -763,7 +780,7 @@ class OthelloEnv(gym.Env):
         if hasattr(self, "soft_top_k") and self.soft_top_k is not None:
             # Get indices of top-k moves by score
             top_k_indices = np.argpartition(
-                -valid_scores, min(self.soft_top_k, len(valid_scores))
+                -valid_scores, min(self.soft_top_k - 1, len(valid_scores) - 1)
             )[: self.soft_top_k]
             # Restrict probabilities to top-k and renormalize
             top_k_mask = np.zeros_like(probabilities)
@@ -776,6 +793,48 @@ class OthelloEnv(gym.Env):
         selected_move = valid_indices[selected_index]
 
         return int(selected_move)
+
+    def _get_hard_engine_move(
+        self, engine_name: str, board: np.ndarray, current_player: int
+    ) -> Optional[int]:
+        """
+        Get a move from a hard (deterministic) engine.
+
+        This is used as a fallback when soft engine score functions are not available.
+
+        Args:
+            engine_name: Name of the engine (aelskels, drohh, or nealetham)
+            board: Current board state as numpy array
+            current_player: Current player (0 for Black, 1 for White)
+
+        Returns:
+            int: Selected move index (0-63), or None if no valid moves
+        """
+        import othello_rust
+
+        # Map engine names to functions
+        engine_funcs = {
+            "aelskels": othello_rust.compute_move_aelskels_py,
+            "drohh": othello_rust.compute_move_drohh_py,
+            "nealetham": othello_rust.compute_move_nealetham_py,
+        }
+
+        if engine_name not in engine_funcs:
+            raise ValueError(f"Invalid engine name: {engine_name}")
+
+        engine_func = engine_funcs[engine_name]
+
+        # Flatten the board to a 1D list if needed
+        flat_board = board.flatten().tolist() if board.ndim > 1 else board.tolist()
+
+        # Call the engine - player is 1-indexed in the Rust API
+        move = engine_func(flat_board, current_player + 1)
+
+        # Check if no valid moves (u8::MAX = 255)
+        if move == 255:
+            return None
+
+        return int(move)
 
     def _calculate_reward(
         self, pieces_flipped: int, game_over: bool, agent_player: Optional[int] = None
