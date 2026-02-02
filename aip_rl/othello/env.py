@@ -326,6 +326,10 @@ class OthelloEnv(gym.Env):
         # Track move history for state persistence
         self._move_history = []
 
+        # Initialize soft engine parameters
+        self.soft_temperature = 1.0
+        self.soft_top_k = None
+
     def reset(
         self, seed: Optional[int] = None, options: Optional[Dict] = None
     ) -> Tuple[np.ndarray, Dict[str, Any]]:
@@ -461,6 +465,17 @@ class OthelloEnv(gym.Env):
                 elif lower_name in get_available_engines():
                     # Engine opponent
                     normalized.append(get_engine_opponent(lower_name))
+                elif lower_name.endswith("_soft"):
+                    # Soft engine variant: extract base engine name
+                    base_engine = lower_name[:-5]  # Remove "_soft" suffix
+                    if base_engine in get_available_engines():
+                        # Store as string to route through soft decision logic
+                        normalized.append(lower_name)
+                    else:
+                        raise ValueError(
+                            f"Unknown soft engine: {normalized_name}. "
+                            f"Base engine '{base_engine}' not found."
+                        )
                 else:
                     try:
                         normalized.append(_load_checkpoint_policy(normalized_name))
@@ -664,6 +679,104 @@ class OthelloEnv(gym.Env):
 
         return obs, reward, terminated, truncated, info
 
+    def _get_soft_engine_move(self, opponent_name: str) -> int:
+        """
+        Get a move from a soft engine (with temperature-based sampling).
+
+        This method implements temperature-based softmax sampling for engine moves.
+        It fetches move scores from Rust bindings and samples from the probability
+        distribution to introduce randomness while preserving engine heuristics.
+
+        Args:
+            opponent_name: Name of the opponent engine (aelskels, drohh, or nealetham)
+
+        Returns:
+            int: Selected move index (0-63)
+        """
+        # Get current board state
+        board = self.game.get_board()
+        current_player = self.game.get_current_player()
+
+        # Import the Rust bindings
+        import othello_rust
+
+        # Get move scores from the appropriate Rust function
+        if opponent_name == "aelskels_soft":
+            try:
+                scores = othello_rust.compute_move_scores_aelskens_py(
+                    board.tolist(), current_player + 1
+                )
+            except AttributeError:
+                # Fallback to the basic function if score function isn't available
+                return self._execute_opponent_move()
+        elif opponent_name == "drohh_soft":
+            try:
+                scores = othello_rust.compute_move_scores_drohh_py(
+                    board.tolist(), current_player + 1
+                )
+            except AttributeError:
+                # Fallback to the basic function if score function isn't available
+                return self._execute_opponent_move()
+        elif opponent_name == "nealetham_soft":
+            try:
+                scores = othello_rust.compute_move_scores_nealetham_py(
+                    board.tolist(), current_player + 1
+                )
+            except AttributeError:
+                # Fallback to the basic function if score function isn't available
+                return self._execute_opponent_move()
+        else:
+            raise ValueError(f"Invalid soft engine name: {opponent_name}")
+
+        # Apply temperature-based softmax sampling
+        # First, normalize scores to handle negative values
+        import numpy as np
+
+        # Convert to numpy array for easier manipulation
+        scores_array = np.array(scores, dtype=np.float32)
+
+        # Find where moves are valid (non-zero scores)
+        valid_moves = self.game.get_valid_moves()
+        valid_indices = np.where(valid_moves)[0]
+
+        # Handle edge case where no valid moves exist
+        if len(valid_indices) == 0:
+            return -1
+
+        # Get scores for valid moves only
+        valid_scores = scores_array[valid_indices]
+
+        # Apply softmax with temperature
+        # Using a small epsilon to prevent numerical issues
+        epsilon = 1e-6
+
+        # Normalize scores to handle negative values properly
+        # Shift all scores so the minimum becomes 0, then add small epsilon
+        min_score = np.min(valid_scores)
+        shifted_scores = valid_scores - min_score + epsilon
+
+        # Apply softmax
+        exp_scores = np.exp(shifted_scores / self.soft_temperature)
+        probabilities = exp_scores / np.sum(exp_scores)
+
+        # Apply top-k filtering if specified
+        if hasattr(self, "soft_top_k") and self.soft_top_k is not None:
+            # Get indices of top-k moves by score
+            top_k_indices = np.argpartition(
+                -valid_scores, min(self.soft_top_k, len(valid_scores))
+            )[: self.soft_top_k]
+            # Restrict probabilities to top-k and renormalize
+            top_k_mask = np.zeros_like(probabilities)
+            top_k_mask[top_k_indices] = 1.0
+            probabilities = probabilities * top_k_mask
+            probabilities = probabilities / np.sum(probabilities)
+
+        # Sample from the probability distribution
+        selected_index = np.random.choice(len(valid_indices), p=probabilities)
+        selected_move = valid_indices[selected_index]
+
+        return int(selected_move)
+
     def _calculate_reward(
         self, pieces_flipped: int, game_over: bool, agent_player: Optional[int] = None
     ) -> float:
@@ -756,6 +869,15 @@ class OthelloEnv(gym.Env):
             # Greedy policy: select move that flips most pieces
             action = self._get_greedy_move()
 
+        elif isinstance(self.opponent, str) and self.opponent.endswith("_soft"):
+            # Soft engine: use temperature-based sampling
+            action = self._get_soft_engine_move(self.opponent)
+            if action == -1:
+                return None
+            # Execute the move
+            self.game.step(action)
+            return int(action)
+
         elif callable(self.opponent):
             # Custom policy: call function with observation
             # Get the opponent's player ID (current player)
@@ -778,6 +900,30 @@ class OthelloEnv(gym.Env):
         else:
             # Should not reach here if validation in __init__ worked correctly
             raise ValueError(f"Unknown opponent type: {self.opponent}")
+
+    def _execute_soft_opponent_move(self, opponent_name: str) -> Optional[int]:
+        """
+        Execute a soft engine move for the given opponent.
+
+        Args:
+            opponent_name: The name of the soft engine opponent
+
+        Returns:
+            Optional[int]: The action taken, or None if no valid moves
+        """
+        # Check if this is a soft engine
+        if opponent_name.endswith("_soft"):
+            # Get the soft move
+            action = self._get_soft_engine_move(opponent_name)
+            if action != -1:
+                # Execute the move
+                self.game.step(action)
+                return int(action)
+            else:
+                return None
+        else:
+            # Regular opponent handling
+            return self._execute_opponent_move()
 
         # Execute the opponent's move
         self.game.step(action)
