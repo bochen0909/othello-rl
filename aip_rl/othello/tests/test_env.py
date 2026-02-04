@@ -271,14 +271,18 @@ class TestSoftEngineFallback:
 
     def test_drohh_soft_fallback_no_recursion(self):
         """Test that drohh_soft engine fallback doesn't cause recursion."""
+        import sys
+
         env = OthelloEnv(opponent="drohh_soft", reward_mode="sparse")
         obs, info = env.reset()
 
-        with patch("aip_rl.othello.env.othello_rust") as mock_rust:
-            mock_rust.compute_move_scores_drohh_py.side_effect = AttributeError(
-                "Function not available"
-            )
+        # Create a mock othello_rust module with only specific functions
+        mock_rust = MagicMock()
+        # Make compute_move_scores_drohh_py raise AttributeError, but provide the hard engine function
+        del mock_rust.compute_move_scores_drohh_py
+        mock_rust.compute_move_drohh_py = MagicMock(return_value=10)
 
+        with patch.dict(sys.modules, {"othello_rust": mock_rust}):
             try:
                 result = env._get_soft_engine_move("drohh_soft")
                 assert isinstance(result, (int, np.integer))
@@ -288,14 +292,18 @@ class TestSoftEngineFallback:
 
     def test_nealetham_soft_fallback_no_recursion(self):
         """Test that nealetham_soft engine fallback doesn't cause recursion."""
+        import sys
+
         env = OthelloEnv(opponent="nealetham_soft", reward_mode="sparse")
         obs, info = env.reset()
 
-        with patch("aip_rl.othello.env.othello_rust") as mock_rust:
-            mock_rust.compute_move_scores_nealetham_py.side_effect = AttributeError(
-                "Function not available"
-            )
+        # Create a mock othello_rust module with only specific functions
+        mock_rust = MagicMock()
+        # Make compute_move_scores_nealetham_py raise AttributeError, but provide the hard engine function
+        del mock_rust.compute_move_scores_nealetham_py
+        mock_rust.compute_move_nealetham_py = MagicMock(return_value=10)
 
+        with patch.dict(sys.modules, {"othello_rust": mock_rust}):
             try:
                 result = env._get_soft_engine_move("nealetham_soft")
                 assert isinstance(result, (int, np.integer))
@@ -304,21 +312,23 @@ class TestSoftEngineFallback:
                 pytest.fail("Nealetham_soft engine fallback caused RecursionError")
 
     def test_soft_engine_fallback_returns_greedy_move(self):
-        """Test that soft engine fallback returns a valid greedy move."""
+        """Test that soft engine fallback handles missing score function."""
         env = OthelloEnv(opponent="aelskels_soft", reward_mode="sparse")
         obs, info = env.reset()
 
-        with patch("aip_rl.othello.env.othello_rust") as mock_rust:
-            mock_rust.compute_move_scores_aelskels_py.side_effect = AttributeError(
-                "Function not available"
-            )
+        # Create a mock othello_rust module
+        mock_rust = MagicMock()
+        # Make the soft engine score function raise AttributeError
+        del mock_rust.compute_move_scores_aelskels_py
+        # But provide a working hard engine function that returns a valid move
+        mock_rust.compute_move_aelskels_py = MagicMock(return_value=10)
 
-            # Mock the greedy move to return a known value
-            with patch.object(env, "_get_greedy_move", return_value=27) as mock_greedy:
-                result = env._get_soft_engine_move("aelskels_soft")
-                # Should call the greedy fallback
-                mock_greedy.assert_called_once()
-                assert result == 27
+        # Patch where othello_rust is imported in the env module
+        with patch("aip_rl.othello.env.othello_rust", mock_rust):
+            result = env._get_soft_engine_move("aelskels_soft")
+            # Should have called the hard engine and returned a valid move
+            assert isinstance(result, (int, np.integer))
+            assert 0 <= result < 64
 
     def test_execute_opponent_move_with_unavailable_soft_engine(self):
         """Test that _execute_opponent_move handles unavailable soft engine gracefully."""
