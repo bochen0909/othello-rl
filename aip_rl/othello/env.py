@@ -716,8 +716,11 @@ class OthelloEnv(gym.Env):
         # Try to get scores from the soft engine, fall back to hard engine
         if opponent_name == "aelskels_soft":
             try:
+                flat_board = (
+                    board.flatten().tolist() if board.ndim > 1 else board.tolist()
+                )
                 scores = othello_rust.compute_move_scores_aelskens_py(
-                    board.tolist(), current_player + 1
+                    flat_board, current_player + 1
                 )
             except AttributeError:
                 # Fallback to the hard engine if score function isn't available
@@ -726,8 +729,11 @@ class OthelloEnv(gym.Env):
                 )
         elif opponent_name == "drohh_soft":
             try:
+                flat_board = (
+                    board.flatten().tolist() if board.ndim > 1 else board.tolist()
+                )
                 scores = othello_rust.compute_move_scores_drohh_py(
-                    board.tolist(), current_player + 1
+                    flat_board, current_player + 1
                 )
             except AttributeError:
                 # Fallback to the hard engine if score function isn't available
@@ -736,8 +742,11 @@ class OthelloEnv(gym.Env):
                 )
         elif opponent_name == "nealetham_soft":
             try:
+                flat_board = (
+                    board.flatten().tolist() if board.ndim > 1 else board.tolist()
+                )
                 scores = othello_rust.compute_move_scores_nealetham_py(
-                    board.tolist(), current_player + 1
+                    flat_board, current_player + 1
                 )
             except AttributeError:
                 # Fallback to the hard engine if score function isn't available
